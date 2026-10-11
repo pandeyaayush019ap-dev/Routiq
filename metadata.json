@@ -1,0 +1,6 @@
+{
+  "name": "Routiq - Heavy Vehicle-Aware Smart Routing",
+  "description": "Smarter Routes. Safer Journeys. Heavy vehicle-aware smart routing platform for Indian truck drivers, fleet operators, and logistics companies.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
