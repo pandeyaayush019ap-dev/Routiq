@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite --port=3000 --host=0.0.0.0",
     "server": "tsx src/server/index.ts",
-    "build": "vite build",
+    "build": "vite build && esbuild src/server/app.ts --bundle --platform=node --target=node20 --format=esm --packages=external --outfile=api/index.js --footer:js=\"export default app;\"",
     "test": "vitest run",
     "preview": "vite preview",
     "clean": "rm -rf dist server.js",
