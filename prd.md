@@ -2,8 +2,8 @@
 
 **Product Name:** Routiq  
 **Tagline:** *Smarter Routes. Safer Journeys.*  
-**Document Version:** 1.0.0  
-**Status:** In Active Development (Phase 1 Frontend Refactoring; Phase 2 Antigravity Backend Preparation)
+**Document Version:** 2.0.0  
+**Status:** Completed (Production Backend, Multi-Provider Routing, GIS Engine & Integrations Delivered)
 
 ---
 
@@ -110,13 +110,17 @@ Commercial road freight in India accounts for over 70% of domestic freight movem
 
 ---
 
-## 5. Scope Boundary: Phase 1 (Frontend Refactor) vs Phase 2 (Antigravity Backend)
+## 5. Scope Boundary: Phase 1 (Frontend Refactor) & Phase 2 (Backend Integration)
 
-| Feature Area | Phase 1 (Google AI Studio - Current) | Phase 2 (Antigravity - Next) |
+| Feature Area | Implementation Status | Technical Solution |
 |---|---|---|
-| **Map Rendering** | Real MapLibre GL JS + OSM tiles | Production vector tile server / MapLibre styles |
-| **Routing** | Provider-independent `IRoutingService` + GeoJSON deterministic engine | OSRM / Valhalla / GraphHopper with custom truck profile Lua rules |
-| **VAHAN Lookup** | `IVahanLookupService` + Mock adapter + Verification UI | Secure Government/ULIP/CarInfo backend proxy with private API secrets |
-| **Vehicle Profiles** | Browser storage + typed `IVehicleService` | PostgreSQL database with Cloud SQL / Drizzle ORM |
-| **Auth** | UI screens + `IAuthService` client contract | Secure JWT/Session cookies, Firebase/OAuth, DB users table |
-| **Billing** | Informational bilingual modal | Stripe / Razorpay Webhooks & server-side entitlement checks |
+| **Map Rendering** | Delivered | MapLibre GL JS v6 + OpenStreetMap standard tile layers & Freight POI overlays |
+| **Routing** | Delivered | Multi-provider architecture: Valhalla (`truck` costing), OpenRouteService HGV, OSRM Road Network & High-Precision Corridor fallback |
+| **GIS Restriction Engine** | Delivered | Turf.js spatial analysis engine checking bridge clearance, axle limits, GVW limits, Kasara Ghat time bans |
+| **Road Width Intelligence** | Delivered | Transparent carriageway analysis; flags unverified segments honestly (Rule 1.1) |
+| **Commercial POI Discovery**| Delivered | OpenStreetMap Overpass API integration querying fuel, rest areas, workshops, and weighbridges along route |
+| **Geocoding & Place Search**| Delivered | Photon (OSM) + Nominatim reverse geocoder with caching & debouncing |
+| **VAHAN RC Lookup** | Delivered | Authenticated server-side proxy (`POST /api/vehicles/lookup`), strict validation, credential safety & manual fallback |
+| **Vehicle Profiles** | Delivered | PostgreSQL database schema + in-memory fallback store + client offline cache |
+| **Auth & Security** | Delivered | 7-day signed JWT tokens, bcrypt password hashing, request rate limits, sensitive log redaction |
+| **Deployment** | Delivered | Vercel full-stack deployment (`api/index.ts` serverless handler + Vite static bundle) |

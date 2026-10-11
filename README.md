@@ -1,73 +1,127 @@
 # Routiq — Heavy Vehicle-Aware Smart Routing
 
 > **Smarter Routes. Safer Journeys.**  
-> A specialized heavy-vehicle routing platform for Indian truck drivers, fleet operators, and logistics companies.
+> A production-oriented heavy-vehicle routing platform for Indian truck drivers, fleet operators, and logistics dispatchers.
+
+[![Build & Test Status](https://img.shields.io/badge/tests-27%20passed-brightgreen.svg)]()
+[![Frontend](https://img.shields.io/badge/frontend-React%2019%20%7C%20MapLibre%20GL-blue.svg)]()
+[![Backend](https://img.shields.io/badge/backend-Express%20%7C%20Node.js%20%7C%20GIS-indigo.svg)]()
+[![Deployment](https://img.shields.io/badge/deployment-Vercel%20Full--Stack-black.svg)]()
 
 ---
 
 ## 🌟 Overview
 
-Standard car navigation engines route heavy commercial vehicles (HCVs, container multi-axles, tankers, tippers) through low railway overbridges, weight-restricted bridges, and time-restricted municipal zones. **Routiq** validates candidate routes against actual physical vehicle specifications (height, width, gross weight, axle loads) and regulatory time-bans.
+Standard car navigation systems route heavy commercial vehicles (HCVs, multi-axle trailers, tippers, petroleum tankers) through low railway overbridges, weight-restricted bridges, and restricted municipal peak hours. **Routiq** calculates routes and validates them against physical truck dimensions (height, width, gross weight, axle loads) and time-based entry bans.
 
-### Key Capabilities in Phase 1 (Frontend):
-- **Genuine Interactive Map:** Powered by **MapLibre GL JS** and **OpenStreetMap** with route polylines, restriction danger hotspots, and attribution.
-- **Indian Commercial Freight Corridors:** High-fidelity GeoJSON routes for Mumbai–Pune (Expressway vs. Khandala Ghat), Mumbai–Nashik (Kasara Ghat time bans), Pune–Nashik, and Delhi–Jaipur.
-- **VAHAN Registration Lookup Flow:** Enter Indian RC numbers (e.g., `MH12AB1234`) to prefill vehicle profiles with technical verification and manual override.
-- **Full Bilingual Support:** Native English and Hindi (हिंदी) with persistent language switching.
-- **Driver-Centric UI:** Large $\ge 48\text{px}$ touch targets, high-contrast indicators, "Stop safely before changing route" safety advisories.
-- **Authentication & Subscription Interfaces:** Auth modal with password visibility toggle; tiered subscription preview modal.
-- **Hexagonal Architecture:** Decoupled service layer ready for Antigravity Phase 2 backend connection.
+### Core Capabilities:
+- **Genuine Interactive Map:** Powered by **MapLibre GL JS** and **OpenStreetMap** with continuous route geometry, bounding auto-fit, alternative route comparison, and danger markers.
+- **Heavy-Vehicle GIS Intelligence:** Built with `@turf/turf` spatial analysis. Detects route intersections with physical hazard zones (e.g., Lonavala 4.1m railway arch, Kalwa Bridge 35t limit, Kasara Ghat time bans).
+- **Road-Width Intelligence:** Transparent evaluation of roadway widths. Adheres strictly to **Rule 1.1** (The Unknown Data Law)—never manufactures fake width data, labeling unverified segments as `"Width data unavailable / Not verified"`.
+- **Multi-Provider Routing Engine:** Modular adapter architecture supporting:
+  - **Valhalla Engine** (`costing: "truck"` with height, width, weight, axle load, length, hazmat).
+  - **OpenRouteService** (`driving-hgv`).
+  - **OSRM Network Router** with automated spatial truck restriction evaluation.
+  - **High-Precision Offline Corridor Fallback** for major Indian freight gateways (Mumbai–Pune, Mumbai–Nashik, Pune–Nashik, Delhi–Jaipur).
+- **Live Commercial POI Discovery:** Queries OpenStreetMap Overpass API for freight facilities along the planned route (Diesel pumps ⛽, truck rest areas 🅿️, workshops 🔧, tyre repair 🚗, weighbridges ⚖️, dhabas 🍲).
+- **Geocoding & Place Search:** Real address autocomplete across India via Photon and Nominatim with server-side caching and debouncing.
+- **VAHAN Registration Gateway:** Server-side `POST /api/vehicles/lookup` adapter supporting official ULIP / licensed VAHAN specs with format sanitization, credential checking, and manual fallback.
+- **Database Persistence & User Accounts:** PostgreSQL with PostGIS schema (`users`, `vehicles`, `saved_routes`, `road_restrictions`), secure JWT sessions, `bcryptjs` password hashing, and user isolation.
+- **Full Bilingual Support:** Native English and Hindi (हिंदी - देवनागरी) across all modals, banners, forms, and route explanations.
+- **Vercel Full-Stack Deployment:** Zero-configuration serverless API functions (`/api/*`) and optimized Vite client bundle.
 
 ---
 
-## 🚀 Quick Start (Development)
+## 🚀 Quick Start (Development & Local Run)
 
+### Prerequisites
+- Node.js $\ge 20$ (Node 24 tested)
+- npm $\ge 10$
+
+### 1. Install Dependencies
 ```bash
-# 1. Install dependencies
 npm install
+```
 
-# 2. Run local development server
+### 2. Configure Environment Variables
+Copy `.env.example` to `.env`:
+```bash
+cp .env.example .env
+```
+*(When external API keys are omitted, Routiq operates out-of-the-box using the OSRM road network, OpenStreetMap Overpass POIs, and an in-memory transactional database store).*
+
+### 3. Run Development Servers
+In terminal 1 (start backend API on port 3001):
+```bash
+npm run server
+```
+
+In terminal 2 (start Vite client on port 3000):
+```bash
 npm run dev
+```
 
-# 3. Build for production (Vercel compatible)
-npm run build
+Visit `http://localhost:3000` in your browser.
 
-# 4. Run type checker
+---
+
+## 🧪 Automated Testing & Verification
+
+Run the complete 27-test verification suite (unit tests, integration tests, and GIS checks):
+```bash
+npm run test
+```
+
+Run TypeScript compilation and production build check:
+```bash
 npm run lint
-```
-
-The application will start on `http://localhost:3000`.
-
----
-
-## 📁 Project Structure
-
-```
-├── prd.md                 # Product Requirements Document
-├── architecture.md        # Technical Architecture & Antigravity Handoff Spec
-├── rules.md               # Enforceable Engineering Rules
-├── design.md              # Design System & Visual Specification
-├── tasks.md               # Prioritized Implementation Checklist
-├── memory.md              # Project Memory & Decisions Ledger
-├── vercel.json            # Vercel deployment rewrite rules
-└── src/
-    ├── types/             # Domain types (Vehicles, Routes, Restrictions, VAHAN, Auth)
-    ├── i18n/              # English & Hindi translation dictionaries & context
-    ├── services/          # Hexagonal Service Layer (Routing, Vehicles, VAHAN, Auth, Maps, GIS)
-    ├── components/
-    │   ├── layout/        # Header, Top Navigation, Brand Bar
-    │   ├── map/           # MapLibre GL map, Legend, Fallback schematic
-    │   ├── routing/       # Route Planner, Turn list, Restriction details modal
-    │   ├── vehicles/      # Vehicle Manager, VAHAN lookup section, Edit modal
-    │   ├── auth/          # Sign In / Sign Up modal
-    │   ├── subscription/  # Tiered plan preview modal
-    │   └── settings/      # Help FAQs & driver advisories
-    ├── App.tsx            # Main state orchestrator
-    └── main.tsx           # React entry point
+npm run build
 ```
 
 ---
 
-## 🛠 Hand-off to Antigravity (Phase 2)
+## 📡 Backend API Reference
 
-See `architecture.md` and `memory.md` for complete API contracts (`POST /api/vehicles/lookup`, `POST /api/routes/calculate`, `POST /api/auth/*`), database schema (PostgreSQL + PostGIS), and deployment requirements.
+| Endpoint | Method | Description |
+|---|---|---|
+| `/api/health` | `GET` | Server health, uptime, and version status |
+| `/api/health/ready` | `GET` | Readiness check for database, GIS, and routing subsystems |
+| `/api/geocoding/search` | `GET / POST` | Real Indian address and place search with coordinates |
+| `/api/geocoding/reverse` | `GET` | Reverse geocode coordinates to structured address |
+| `/api/routes` | `POST` | Calculate truck-safe route candidates with restriction evaluation |
+| `/api/routes/alternatives` | `POST` | Retrieve alternative route corridors |
+| `/api/routes/analyze` | `POST` | Perform spatial GIS restriction analysis on arbitrary GeoJSON LineString |
+| `/api/routes/save` | `POST` | Save planned route to user account (JWT required) |
+| `/api/routes/saved` | `GET` | Retrieve saved routes for authenticated user |
+| `/api/places/nearby` | `GET` | Find commercial freight POIs near coordinates |
+| `/api/places/along-route` | `POST` | Discover fuel stations, rest stops, and weighbridges along route |
+| `/api/vehicles/lookup` | `POST` | Server-side VAHAN / ULIP commercial registration lookup |
+| `/api/vehicles` | `GET / POST` | List or create vehicle profiles |
+| `/api/vehicles/:id` | `PATCH / DELETE` | Update or remove vehicle profile |
+| `/api/auth/register` | `POST` | Create new user account with bcrypt password hashing |
+| `/api/auth/login` | `POST` | Sign in and receive JWT token |
+| `/api/auth/me` | `GET` | Get authenticated user profile |
+| `/api/gis/restrictions` | `GET` | List verified commercial freight restriction hotspots |
+
+---
+
+## 🌐 Vercel Production Deployment
+
+Routiq is engineered for seamless deployment on Vercel:
+
+1. Connect the GitHub repository `pandeyaayush019ap-dev/Routiq` in the Vercel dashboard.
+2. Build Settings:
+   - Framework Preset: `Vite`
+   - Build Command: `npm run build`
+   - Output Directory: `dist`
+3. Environment Variables:
+   - Configure variables documented in `.env.example` (`JWT_SECRET`, `DATABASE_URL`, `VAHAN_API_KEY`, etc.).
+4. Deployment:
+   - Vercel automatically deploys the frontend static assets and routes all `/api/*` requests to the serverless function handler in `api/index.ts`.
+
+---
+
+## 📄 License & Attribution
+
+- **License:** Apache 2.0
+- **Map Data:** &copy; [OpenStreetMap](https://www.openstreetmap.org/copyright) contributors.

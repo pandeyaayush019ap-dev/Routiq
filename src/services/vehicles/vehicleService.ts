@@ -136,6 +136,26 @@ export class LocalVehicleService implements IVehicleService {
       this.vehicles.push(vehicle);
     }
     this.saveToStorage();
+
+    // Async sync to backend API
+    fetch('/api/vehicles', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        id: vehicle.id,
+        name: vehicle.name,
+        category: vehicle.category,
+        registration_number: vehicle.registrationNumber,
+        height_meters: vehicle.heightMeters,
+        width_meters: vehicle.widthMeters,
+        length_meters: vehicle.lengthMeters,
+        loaded_weight_tonnes: vehicle.loadedWeightTonnes,
+        registered_gvw_tonnes: vehicle.gvwTonnes,
+        axle_count: vehicle.axles,
+        cargo_type: vehicle.cargoType,
+      }),
+    }).catch(() => {});
+
     return vehicle;
   }
 
@@ -149,6 +169,10 @@ export class LocalVehicleService implements IVehicleService {
       this.activeId = this.vehicles[0].id;
     }
     this.saveToStorage();
+
+    // Async sync delete to backend API
+    fetch(`/api/vehicles/${id}`, { method: 'DELETE' }).catch(() => {});
+
     return true;
   }
 

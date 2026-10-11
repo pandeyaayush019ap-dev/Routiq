@@ -116,6 +116,21 @@ export const RouteResults: React.FC<RouteResultsProps> = ({
               )}
             </div>
 
+            {/* Road-Width Intelligence Advisory (Rule 1.1) */}
+            <div className="text-[11px] bg-amber-50/70 border border-amber-200 rounded-xl p-2.5 my-2 text-amber-900 flex items-start gap-2">
+              <span className="text-sm shrink-0">📏</span>
+              <div>
+                <strong className="font-bold">
+                  {isHindi ? 'सड़क की चौड़ाई: डेटा असत्यापित' : 'Road Width Intelligence: Unverified Data'}
+                </strong>
+                <p className="mt-0.5 text-amber-800 leading-tight">
+                  {isHindi
+                    ? 'इस मार्ग पर आधिकारिक चौड़ाई सर्वेक्षण उपलब्ध नहीं है। नक्शे की लाइन से सड़क की वास्तविक चौड़ाई का अनुमान न लगाएं।'
+                    : 'Exact carriageway width data is unavailable for this corridor. Do not infer usable physical width from map line thickness. Verify local signage on narrow sections.'}
+                </p>
+              </div>
+            </div>
+
             {/* Road Restrictions List */}
             {route.restrictions.length > 0 ? (
               <div className="my-2.5 space-y-1.5">

@@ -2,70 +2,7 @@ import { IVahanLookupService } from './types';
 import { VahanLookupResult, VahanVehicleDetails } from '../../types/vahan';
 import { isValidIndianRegistration, sanitizeRegistrationNumber } from '../gis/geoUtils';
 
-const KNOWN_VAHAN_DATABASE: Record<string, VahanVehicleDetails> = {
-  MH12AB1234: {
-    registrationNumber: 'MH12AB1234',
-    makerModel: 'Tata Signa 4825.TK Heavy Hauler',
-    vehicleClass: 'Heavy Goods Vehicle (HGV)',
-    category: 'tipper',
-    fuelType: 'Diesel (BS-VI)',
-    registrationDate: '2022-04-14',
-    registeredGvwTonnes: 47.5,
-    unladenWeightTonnes: 14.2,
-    suggestedAxles: 5,
-    estimatedHeightMeters: 3.5,
-    estimatedWidthMeters: 2.5,
-    estimatedLengthMeters: 10.2,
-    source: 'VAHAN_SIMULATED_GATEWAY',
-  },
-  MH04AZ9940: {
-    registrationNumber: 'MH04AZ9940',
-    makerModel: 'Ashok Leyland 5525 TT Prime Mover Container',
-    vehicleClass: 'Multi-Axle Articulated Trailer',
-    category: 'container',
-    fuelType: 'Diesel (BS-VI)',
-    registrationDate: '2023-01-20',
-    registeredGvwTonnes: 54.0,
-    unladenWeightTonnes: 12.5,
-    suggestedAxles: 6,
-    estimatedHeightMeters: 4.3, // High container
-    estimatedWidthMeters: 2.5,
-    estimatedLengthMeters: 16.5,
-    source: 'VAHAN_SIMULATED_GATEWAY',
-  },
-  DL01AA8821: {
-    registrationNumber: 'DL01AA8821',
-    makerModel: 'BharatBenz 3528C Petroleum Tanker',
-    vehicleClass: 'Hazardous Goods Tanker',
-    category: 'tanker',
-    fuelType: 'Diesel (BS-VI)',
-    registrationDate: '2021-11-05',
-    registeredGvwTonnes: 35.0,
-    unladenWeightTonnes: 11.8,
-    suggestedAxles: 4,
-    estimatedHeightMeters: 3.65,
-    estimatedWidthMeters: 2.5,
-    estimatedLengthMeters: 11.8,
-    source: 'VAHAN_SIMULATED_GATEWAY',
-  },
-  MH12AB4071: {
-    registrationNumber: 'MH12AB4071',
-    makerModel: 'Tata 407 Gold SFC High-Deck',
-    vehicleClass: 'Light Commercial Vehicle (LCV)',
-    category: 'truck',
-    fuelType: 'Diesel',
-    registrationDate: '2020-08-12',
-    registeredGvwTonnes: 7.5,
-    unladenWeightTonnes: 2.9,
-    suggestedAxles: 2,
-    estimatedHeightMeters: 3.0,
-    estimatedWidthMeters: 2.1,
-    estimatedLengthMeters: 6.0,
-    source: 'VAHAN_SIMULATED_GATEWAY',
-  },
-};
-
-export class MockVahanLookupService implements IVahanLookupService {
+export class ProductionVahanLookupService implements IVahanLookupService {
   public validateRegistrationFormat(registrationNumber: string): boolean {
     return isValidIndianRegistration(registrationNumber);
   }
@@ -85,43 +22,80 @@ export class MockVahanLookupService implements IVahanLookupService {
       };
     }
 
-    // Simulate realistic network roundtrip to VAHAN gateway
-    await new Promise((resolve) => setTimeout(resolve, 600));
+    try {
+      const response = await fetch('/api/vehicles/lookup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ registrationNumber: sanitized }),
+      });
 
-    // Check pre-configured database
-    const exactMatch = KNOWN_VAHAN_DATABASE[sanitized];
-    if (exactMatch) {
+      if (!response.ok) {
+        if (response.status === 400) {
+          const errData = await response.json().catch(() => ({}));
+          return {
+            status: 'INVALID_FORMAT',
+            requiresDriverConfirmation: false,
+            errorMessage: errData.message || 'Invalid registration format.',
+          };
+        }
+      }
+
+      const data = await response.json();
+
+      if (data.status === 'UNCONFIGURED_CREDENTIALS') {
+        return {
+          status: 'UNCONFIGURED_CREDENTIALS',
+          requiresDriverConfirmation: false,
+          errorMessage: data.message,
+        };
+      }
+
+      if (data.status === 'SUCCESS' && data.vehicle) {
+        const v: VahanVehicleDetails = {
+          registrationNumber: data.vehicle.registrationNumber,
+          makerModel: data.vehicle.makerModel,
+          vehicleClass: data.vehicle.vehicleClass,
+          category: data.vehicle.category || 'truck',
+          fuelType: data.vehicle.fuelType || 'Diesel',
+          registrationDate: data.vehicle.registrationDate || '',
+          registeredGvwTonnes: data.vehicle.registeredGvwTonnes,
+          unladenWeightTonnes: data.vehicle.unladenWeightTonnes,
+          suggestedAxles: data.vehicle.suggestedAxles,
+          estimatedHeightMeters: data.vehicle.estimatedHeightMeters,
+          estimatedWidthMeters: data.vehicle.estimatedWidthMeters,
+          estimatedLengthMeters: data.vehicle.estimatedLengthMeters,
+          source: data.vehicle.source || 'GOVERNMENT_VAHAN_GATEWAY',
+        };
+
+        return {
+          status: 'SUCCESS',
+          vehicle: v,
+          requiresDriverConfirmation: true,
+        };
+      }
+
+      if (data.status === 'NOT_FOUND') {
+        return {
+          status: 'NOT_FOUND',
+          requiresDriverConfirmation: false,
+          errorMessage: data.message || `Registration ${sanitized} not found in VAHAN records.`,
+        };
+      }
+
       return {
-        status: 'SUCCESS',
-        vehicle: exactMatch,
-        requiresDriverConfirmation: true, // As required by PRD and rules
+        status: 'API_UNAVAILABLE',
+        requiresDriverConfirmation: false,
+        errorMessage: data.message || 'VAHAN gateway service unavailable.',
+      };
+    } catch (err) {
+      console.warn('[VahanService] Backend lookup failed, checking offline status:', err);
+      return {
+        status: 'API_UNAVAILABLE',
+        requiresDriverConfirmation: false,
+        errorMessage: 'Unable to reach backend VAHAN lookup service. Please check your network connection.',
       };
     }
-
-    // Generate realistic response for any other valid Indian registration
-    const stateCode = sanitized.substring(0, 2);
-    const mockGenerated: VahanVehicleDetails = {
-      registrationNumber: sanitized,
-      makerModel: `Eicher Pro 6028 Commercial Hauler (${stateCode} RTO)`,
-      vehicleClass: 'Heavy Commercial Vehicle (HCV)',
-      category: 'truck',
-      fuelType: 'Diesel (BS-VI)',
-      registrationDate: '2022-09-18',
-      registeredGvwTonnes: 28.0,
-      unladenWeightTonnes: 8.8,
-      suggestedAxles: 3,
-      estimatedHeightMeters: 3.4,
-      estimatedWidthMeters: 2.45,
-      estimatedLengthMeters: 9.2,
-      source: 'VAHAN_SIMULATED_GATEWAY',
-    };
-
-    return {
-      status: 'SUCCESS',
-      vehicle: mockGenerated,
-      requiresDriverConfirmation: true,
-    };
   }
 }
 
-export const vahanService = new MockVahanLookupService();
+export const vahanService = new ProductionVahanLookupService();

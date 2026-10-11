@@ -33,16 +33,52 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [lastResult, setLastResult] = useState<RouteCalculationResult | null>(null);
 
+  // Dynamic Geocoding Suggestions
+  const [originSuggestions, setOriginSuggestions] = useState<Array<{ name: string; address: string }>>([]);
+  const [destSuggestions, setDestSuggestions] = useState<Array<{ name: string; address: string }>>([]);
+  const [isSearchingOrigin, setIsSearchingOrigin] = useState<boolean>(false);
+  const [isSearchingDest, setIsSearchingDest] = useState<boolean>(false);
+
   const availableCities = routingService.getAvailableCities();
+
+  const handleOriginChange = (val: string) => {
+    setOrigin(val);
+    if (val.trim().length >= 3) {
+      setIsSearchingOrigin(true);
+      routingService.searchPlaces(val).then((res) => {
+        setOriginSuggestions(res);
+        setIsSearchingOrigin(false);
+      }).catch(() => setIsSearchingOrigin(false));
+    } else {
+      setOriginSuggestions([]);
+    }
+  };
+
+  const handleDestChange = (val: string) => {
+    setDestination(val);
+    if (val.trim().length >= 3) {
+      setIsSearchingDest(true);
+      routingService.searchPlaces(val).then((res) => {
+        setDestSuggestions(res);
+        setIsSearchingDest(false);
+      }).catch(() => setIsSearchingDest(false));
+    } else {
+      setDestSuggestions([]);
+    }
+  };
 
   const handleSwap = () => {
     setOrigin(destination);
     setDestination(origin);
+    setOriginSuggestions([]);
+    setDestSuggestions([]);
   };
 
   const handleQuickCorridor = (orig: string, dest: string) => {
     setOrigin(orig);
     setDestination(dest);
+    setOriginSuggestions([]);
+    setDestSuggestions([]);
   };
 
   const handleFindRoute = async (e?: React.FormEvent) => {
@@ -157,7 +193,7 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({
         </datalist>
 
         {/* Origin */}
-        <div>
+        <div className="relative">
           <label htmlFor="origin-input" className="block text-xs font-bold text-slate-700 mb-1">
             📍 {t('startLocation')}
           </label>
@@ -166,10 +202,31 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({
             list="city-suggestions"
             type="text"
             value={origin}
-            onChange={(e) => setOrigin(e.target.value)}
+            onChange={(e) => handleOriginChange(e.target.value)}
             placeholder="Pune / मुंबई"
             className="w-full px-3 py-2.5 rounded-xl border border-slate-300 text-sm font-medium text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-600 min-h-[46px]"
           />
+          {isSearchingOrigin && (
+            <div className="text-[10px] text-slate-400 mt-0.5">Searching places...</div>
+          )}
+          {originSuggestions.length > 0 && (
+            <div className="absolute left-0 right-0 top-full mt-1 bg-white border border-slate-200 rounded-xl shadow-xl z-20 max-h-48 overflow-y-auto divide-y divide-slate-100">
+              {originSuggestions.map((sug, idx) => (
+                <button
+                  key={idx}
+                  type="button"
+                  onClick={() => {
+                    setOrigin(sug.name);
+                    setOriginSuggestions([]);
+                  }}
+                  className="w-full text-left px-3 py-2 hover:bg-blue-50 transition-colors"
+                >
+                  <div className="text-xs font-bold text-slate-800">{sug.name}</div>
+                  <div className="text-[10px] text-slate-500 truncate">{sug.address}</div>
+                </button>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* Swap Control */}
@@ -188,7 +245,7 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({
         </div>
 
         {/* Destination */}
-        <div>
+        <div className="relative">
           <label htmlFor="destination-input" className="block text-xs font-bold text-slate-700 mb-1">
             🏁 {t('destination')}
           </label>
@@ -197,10 +254,31 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({
             list="city-suggestions"
             type="text"
             value={destination}
-            onChange={(e) => setDestination(e.target.value)}
+            onChange={(e) => handleDestChange(e.target.value)}
             placeholder="Mumbai / नासिक"
             className="w-full px-3 py-2.5 rounded-xl border border-slate-300 text-sm font-medium text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-600 min-h-[46px]"
           />
+          {isSearchingDest && (
+            <div className="text-[10px] text-slate-400 mt-0.5">Searching places...</div>
+          )}
+          {destSuggestions.length > 0 && (
+            <div className="absolute left-0 right-0 top-full mt-1 bg-white border border-slate-200 rounded-xl shadow-xl z-20 max-h-48 overflow-y-auto divide-y divide-slate-100">
+              {destSuggestions.map((sug, idx) => (
+                <button
+                  key={idx}
+                  type="button"
+                  onClick={() => {
+                    setDestination(sug.name);
+                    setDestSuggestions([]);
+                  }}
+                  className="w-full text-left px-3 py-2 hover:bg-blue-50 transition-colors"
+                >
+                  <div className="text-xs font-bold text-slate-800">{sug.name}</div>
+                  <div className="text-[10px] text-slate-500 truncate">{sug.address}</div>
+                </button>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* Vehicle Selection */}

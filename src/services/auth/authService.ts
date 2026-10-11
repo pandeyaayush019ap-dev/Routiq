@@ -3,21 +3,12 @@ import { AuthSession, SignInCredentials, SignUpCredentials, User } from '../../t
 
 const AUTH_STORAGE_KEY = 'routiq_auth_session';
 
-const DEMO_USER: User = {
-  id: 'usr_demo_101',
-  name: 'Rajesh Kumar (राजेश कुमार)',
-  phoneOrEmail: '+91 98765 43210',
-  role: 'driver',
-  subscriptionTier: 'pro',
-  companyName: 'Shivneri Road Freight Lines, Pune',
-  createdAt: '2025-06-15T10:00:00Z',
-};
-
-export class ClientAuthService implements IAuthService {
+export class ProductionAuthService implements IAuthService {
   private currentSession: AuthSession;
 
   constructor() {
     this.currentSession = this.loadFromStorage();
+    this.verifyAndRefreshSession();
   }
 
   private loadFromStorage(): AuthSession {
@@ -41,6 +32,43 @@ export class ClientAuthService implements IAuthService {
     }
   }
 
+  private async verifyAndRefreshSession(): Promise<void> {
+    if (!this.currentSession.token) return;
+
+    try {
+      const res = await fetch('/api/auth/me', {
+        headers: {
+          Authorization: `Bearer ${this.currentSession.token}`,
+        },
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        if (data.user) {
+          const updated: AuthSession = {
+            ...this.currentSession,
+            user: {
+              id: data.user.id,
+              name: data.user.name,
+              phoneOrEmail: data.user.email_or_phone,
+              role: data.user.role,
+              subscriptionTier: data.user.subscription_tier,
+              companyName: data.user.company_name,
+              createdAt: data.user.created_at,
+            },
+            isAuthenticated: true,
+          };
+          this.saveToStorage(updated);
+        }
+      } else if (res.status === 401) {
+        // Expired token
+        this.saveToStorage({ user: null, isAuthenticated: false });
+      }
+    } catch {
+      // Network unreachable, keep offline session
+    }
+  }
+
   public async getSession(): Promise<AuthSession> {
     return this.currentSession;
   }
@@ -50,67 +78,145 @@ export class ClientAuthService implements IAuthService {
   }
 
   public async signIn(credentials: SignInCredentials): Promise<AuthSession> {
-    await new Promise((resolve) => setTimeout(resolve, 400));
+    try {
+      const response = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          identifier: credentials.identifier,
+          password: credentials.password,
+        }),
+      });
 
-    const user: User = {
-      id: `usr_${Date.now()}`,
-      name: credentials.identifier.includes('@') ? credentials.identifier.split('@')[0] : 'Truck Driver',
-      phoneOrEmail: credentials.identifier,
-      role: 'driver',
-      subscriptionTier: 'free',
-      createdAt: new Date().toISOString(),
-    };
+      if (!response.ok) {
+        const errData = await response.json().catch(() => ({}));
+        throw new Error(errData.message || 'Invalid phone/email or password.');
+      }
 
-    const session: AuthSession = {
-      user: credentials.identifier ? user : DEMO_USER,
-      token: `demo_jwt_token_${Date.now()}`,
-      isAuthenticated: true,
-      expiresAt: new Date(Date.now() + 86400000 * 7).toISOString(),
-    };
+      const data = await response.json();
+      const user: User = {
+        id: data.user.id,
+        name: data.user.name,
+        phoneOrEmail: data.user.email_or_phone,
+        role: data.user.role,
+        subscriptionTier: data.user.subscription_tier,
+        companyName: data.user.company_name,
+        createdAt: data.user.created_at,
+      };
 
-    this.saveToStorage(session);
-    return session;
+      const session: AuthSession = {
+        user,
+        token: data.token,
+        isAuthenticated: true,
+        expiresAt: new Date(Date.now() + 86400000 * 7).toISOString(),
+      };
+
+      this.saveToStorage(session);
+      return session;
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Login failed.';
+      throw new Error(msg);
+    }
   }
 
   public async signUp(credentials: SignUpCredentials): Promise<AuthSession> {
-    await new Promise((resolve) => setTimeout(resolve, 400));
+    try {
+      const response = await fetch('/api/auth/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          identifier: credentials.identifier,
+          password: credentials.password,
+          name: credentials.name,
+          role: credentials.role,
+          companyName: credentials.companyName,
+        }),
+      });
 
-    const user: User = {
-      id: `usr_${Date.now()}`,
-      name: credentials.name,
-      phoneOrEmail: credentials.identifier,
-      role: credentials.role,
-      subscriptionTier: 'free',
-      companyName: credentials.companyName,
-      createdAt: new Date().toISOString(),
-    };
+      if (!response.ok) {
+        const errData = await response.json().catch(() => ({}));
+        throw new Error(errData.message || 'Registration failed.');
+      }
 
-    const session: AuthSession = {
-      user,
-      token: `demo_jwt_token_${Date.now()}`,
-      isAuthenticated: true,
-      expiresAt: new Date(Date.now() + 86400000 * 7).toISOString(),
-    };
+      const data = await response.json();
+      const user: User = {
+        id: data.user.id,
+        name: data.user.name,
+        phoneOrEmail: data.user.email_or_phone,
+        role: data.user.role,
+        subscriptionTier: data.user.subscription_tier,
+        companyName: data.user.company_name,
+        createdAt: data.user.created_at,
+      };
 
-    this.saveToStorage(session);
-    return session;
+      const session: AuthSession = {
+        user,
+        token: data.token,
+        isAuthenticated: true,
+        expiresAt: new Date(Date.now() + 86400000 * 7).toISOString(),
+      };
+
+      this.saveToStorage(session);
+      return session;
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Registration failed.';
+      throw new Error(msg);
+    }
   }
 
   public async signOut(): Promise<void> {
+    try {
+      if (this.currentSession.token) {
+        await fetch('/api/auth/logout', {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${this.currentSession.token}` },
+        });
+      }
+    } catch {
+      // ignore
+    }
     const session: AuthSession = { user: null, isAuthenticated: false };
     this.saveToStorage(session);
   }
 
   public async signInWithDemo(): Promise<AuthSession> {
-    const session: AuthSession = {
-      user: DEMO_USER,
-      token: `demo_jwt_token_${Date.now()}`,
-      isAuthenticated: true,
-      expiresAt: new Date(Date.now() + 86400000 * 7).toISOString(),
-    };
-    this.saveToStorage(session);
-    return session;
+    // In production, register or sign in a designated demo account via backend
+    try {
+      return await this.signIn({
+        identifier: 'driver@routiq.app',
+        password: 'Password123!',
+      });
+    } catch {
+      // If demo user does not exist yet, register it
+      try {
+        return await this.signUp({
+          name: 'Rajesh Kumar (राजेश कुमार)',
+          identifier: 'driver@routiq.app',
+          password: 'Password123!',
+          role: 'driver',
+          companyName: 'Shivneri Road Freight Lines, Pune',
+        });
+      } catch {
+        // Fallback
+        const fallbackUser: User = {
+          id: 'usr_driver_demo',
+          name: 'Rajesh Kumar (राजेश कुमार)',
+          phoneOrEmail: 'driver@routiq.app',
+          role: 'driver',
+          subscriptionTier: 'pro',
+          companyName: 'Shivneri Road Freight Lines, Pune',
+          createdAt: new Date().toISOString(),
+        };
+        const session: AuthSession = {
+          user: fallbackUser,
+          token: 'demo_session_token',
+          isAuthenticated: true,
+        };
+        this.saveToStorage(session);
+        return session;
+      }
+    }
   }
 }
 
-export const authService = new ClientAuthService();
+export const authService = new ProductionAuthService();

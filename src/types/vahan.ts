@@ -16,7 +16,7 @@ export interface VahanVehicleDetails {
   estimatedHeightMeters?: number;
   estimatedWidthMeters?: number;
   estimatedLengthMeters?: number;
-  source: 'VAHAN_SIMULATED_GATEWAY' | 'MANUAL_ENTRY';
+  source: 'GOVERNMENT_VAHAN_GATEWAY' | 'ULIP_GATEWAY' | 'VAHAN_SIMULATED_GATEWAY' | 'MANUAL_ENTRY';
 }
 
 export type VahanLookupStatus = 
@@ -25,6 +25,7 @@ export type VahanLookupStatus =
   | 'SUCCESS'
   | 'NOT_FOUND'
   | 'INVALID_FORMAT'
+  | 'UNCONFIGURED_CREDENTIALS'
   | 'API_UNAVAILABLE'
   | 'RATE_LIMITED';
 

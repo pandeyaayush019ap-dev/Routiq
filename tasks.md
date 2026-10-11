@@ -3,75 +3,72 @@
 **Tracking Status:**
 - `[x]` Completed
 - `[/]` In Progress
-- `[ ]` Pending / Scheduled for Phase 2 (Antigravity)
+- `[ ]` Pending
 
 ---
 
-## Phase 1: Frontend Architecture & MapLibre Integration (Google AI Studio)
-
-### 1. Project Initialization & Architecture Setup
-- [x] Inspect existing Claude single-file prototype (`Heavy Vehicle-Aware Smart Routing(1).html`).
+## Phase 1: Frontend Architecture & MapLibre Integration
+- [x] Inspect existing prototype and frontend architecture.
 - [x] Create project documentation suite (`prd.md`, `architecture.md`, `rules.md`, `design.md`, `tasks.md`, `memory.md`).
-- [x] Install `maplibre-gl` dependency.
 - [x] Configure Tailwind CSS v4 and Google Fonts (`Inter` + `Noto Sans Devanagari`).
-- [x] Synchronize `metadata.json` and `index.html` with Routiq branding and OpenGraph tags.
-- [x] Configure `vercel.json` for SPA routing fallback.
-
-### 2. Domain Models & Type System
-- [x] Define TypeScript interfaces for Vehicles (`VehicleProfile`, `VehicleCategory`, `CargoType`).
-- [x] Define GeoJSON and GIS interfaces (`GisCoordinates`, `GeoJsonLineString`, `RestrictionFeature`).
-- [x] Define Route planning and restriction interfaces (`RouteCandidate`, `RouteStatus`, `RoadRestriction`).
-- [x] Define VAHAN lookup data models (`VahanLookupRequest`, `VahanVehicleDetails`).
-- [x] Define Auth state models (`User`, `AuthSession`, `SignInInput`, `SignUpInput`).
-
-### 3. Service Layer (Hexagonal Ports & Adapters)
-- [x] Create `IRoutingService` & GeoJSON corridor engine with real Indian freight coordinates (Mumbai–Pune, Mumbai–Nashik, Pune–Nashik, Delhi–Jaipur).
-- [x] Create `IVehicleService` with local persistence and strict dimension validation.
-- [x] Create `IVahanLookupService` with Indian registration number regex validation and realistic mock adapter.
-- [x] Create `IAuthService` client interface for Phase 2 token authentication.
-- [x] Create GIS utility functions (`calculateBounds`, `formatDistance`, `formatDuration`).
-
-### 4. Bilingual Localization (English & Hindi)
-- [x] Build comprehensive dictionary (`translations.ts`) for all user flows.
-- [x] Create `LanguageContext` and `useTranslation` hook with localStorage persistence.
-- [x] Verify zero missing translation keys across all modals, banners, forms, and tooltips.
-
-### 5. Genuine MapLibre GL JS Integration
-- [x] Build `InteractiveMap.tsx` with MapLibre canvas and OpenStreetMap raster/vector tiles.
-- [x] Implement dynamic route polylines (primary selected blue vs alternative dashed).
-- [x] Implement interactive restriction markers (Red for blocked clearances, Amber for time/axle warnings).
-- [x] Implement origin (`A`) and destination (`B`) pin rendering.
-- [x] Implement automated bounding box fitting on route change.
-- [x] Implement fallback schematic viewer if WebGL or external tile source fails.
-- [x] Add prominent OpenStreetMap copyright attribution.
-
-### 6. Driver-Centric Route Planning UI
-- [x] Build `RoutePlanner.tsx` with searchable origin/destination suggestions.
-- [x] Implement quick origin/destination swap control.
-- [x] Implement departure time picker for time-restricted truck ban evaluation.
-- [x] Implement candidate route comparison cards with "Why this route" explanations.
-- [x] Implement `RestrictionDetailModal.tsx` for bridge clearance, axle limits, and safety actions.
-- [x] Implement "Stop safely before changing route" driver advisory banners.
-
-### 7. Vehicle Management & VAHAN Lookup Workflow
-- [x] Build `VehicleManager.tsx` with category badges and specification details.
-- [x] Build `VahanLookupSection.tsx` for Indian registration lookup (e.g., `MH12AB1234`).
-- [x] Build `VehicleFormModal.tsx` allowing driver review and manual dimension completion.
-- [x] Enforce height, width, length, and loaded weight boundaries.
-
-### 8. Authentication & Subscription Interfaces
-- [x] Build `AuthModal.tsx` (Sign In / Sign Up, password visibility toggle, phone/email tabs).
-- [x] Build `SubscriptionModal.tsx` (Free / Pro / Fleet tier comparison with "Coming Soon" badges).
+- [x] Build `InteractiveMap.tsx` with MapLibre GL JS and OpenStreetMap tile layers.
+- [x] Implement bilingual support (English and Hindi) with zero missing keys.
+- [x] Implement driver safety banner ("Stop safely before changing route").
 
 ---
 
-## Phase 2: Backend, Database & Production Routing (Antigravity)
+## Phase 2: Full Production Backend, GIS & Integrations (Completed)
 
-### 9. Antigravity Backend Implementation
-- [ ] Initialize Node.js / Express backend server with TypeScript.
-- [ ] Provision PostgreSQL database with PostGIS spatial extension.
-- [ ] Implement Drizzle ORM schema (`users`, `vehicles`, `restrictions`, `routes_cache`).
-- [ ] Connect production VAHAN / ULIP API gateway with server secrets and rate limiting.
-- [ ] Connect self-hosted Valhalla or OSRM truck routing engine with heavy-vehicle Lua profile.
-- [ ] Implement JWT authentication and session cookies.
-- [ ] Implement server-side subscription entitlement checks (Razorpay / Stripe).
+### 1. Backend Architecture & Runtime
+- [x] Resolve `esbuild` vs `vite` npm peer dependency conflict in `package.json`.
+- [x] Initialize Express + Node.js backend (`src/server/app.ts`, `src/server/index.ts`).
+- [x] Build Vercel serverless request handler (`api/index.ts`).
+- [x] Configure `vercel.json` and Vite API proxy for full-stack routing.
+- [x] Implement CORS, Request ID tracking, and sensitive-data log redaction.
+
+### 2. Multi-Provider Truck Routing Engine
+- [x] Create `IRoutingProvider` decoupled interface (`src/server/routing/types.ts`).
+- [x] Build `ValhallaProvider` with heavy truck costing (height, width, weight, axle load, hazmat).
+- [x] Build `OpenRouteServiceProvider` (`driving-hgv` profile).
+- [x] Build `OsrmRoutingProvider` querying real road geometries with automated GIS truck evaluation.
+- [x] Build `OfflineCorridorProvider` for high-precision Indian freight gateways.
+- [x] Master `RoutingService` orchestrator prioritizing verified compliant routes.
+
+### 3. Geospatial & Truck Restriction Analysis
+- [x] Build `@turf/turf` spatial analysis engine (`src/server/gis/spatialEngine.ts`).
+- [x] Build verified commercial freight restrictions knowledge base (`knownRestrictions.ts`).
+- [x] Implement point-to-line buffer collision detection for physical overhead clearances and gross weight limits.
+- [x] Implement road-width intelligence adhering strictly to Rule 1.1 (transparent unverified data disclaimer).
+- [x] Conduct MapArc investigation (clarified as Esri ArcMap / ArcGIS StreetMap Premium) and implement `MapArcGisProvider` adapter.
+
+### 4. Real Geocoding & Commercial POI Discovery
+- [x] Implement `GeocodingService` with Photon (OSM search) and Nominatim fallback with caching.
+- [x] Implement reverse-geocoding endpoint.
+- [x] Add dynamic autocomplete dropdown to `RoutePlanner.tsx` for real Indian locations.
+- [x] Implement `PlacesService` querying OpenStreetMap Overpass API along route LineStrings.
+- [x] Integrate freight POI layer (fuel ⛽, rest stops 🅿️, workshops 🔧, weighbridges ⚖️) into `InteractiveMap.tsx`.
+
+### 5. VAHAN / ULIP Vehicle Registration Gateway
+- [x] Implement server-side `POST /api/vehicles/lookup` adapter.
+- [x] Implement Indian registration format sanitization and regex validation.
+- [x] Check server credentials securely; return structured unconfigured status when keys are absent.
+- [x] Eliminate hardcoded fake vehicles from production flows.
+
+### 6. Database Persistence & User Accounts
+- [x] Write PostgreSQL + PostGIS schema (`src/server/database/schema.sql`).
+- [x] Build database repository layer (`src/server/database/db.ts`) with PostgreSQL support and resilient transactional fallback.
+- [x] Implement JWT authentication service with `bcryptjs` password hashing and user isolation.
+- [x] Connect frontend `authService` to backend endpoints (`/api/auth/*`).
+- [x] Connect frontend `vehicleService` to backend endpoints (`/api/vehicles`).
+
+### 7. Automated Testing & Verification
+- [x] Build automated test suite in `tests/` with 27 unit and integration tests using Vitest.
+- [x] Verify health and readiness endpoints (`tests/health.test.ts`).
+- [x] Verify authentication and JWT access control (`tests/auth.test.ts`).
+- [x] Verify geocoding and reverse geocoding (`tests/geocoding.test.ts`).
+- [x] Verify truck routing and low bridge clearance violations (`tests/routing.test.ts`).
+- [x] Verify GIS spatial analysis and buffer intersections (`tests/gis.test.ts`).
+- [x] Verify VAHAN lookup format validation and credentials checks (`tests/vahan.test.ts`).
+- [x] Verify commercial POI discovery (`tests/places.test.ts`).
+- [x] Verify vehicle profile CRUD persistence (`tests/vehicles.test.ts`).
+- [x] Verify clean TypeScript compilation (`tsc --noEmit`) and Vite production bundle (`vite build`).
