@@ -9,6 +9,7 @@ interface NavigationHudProps {
   remainingDistanceKm: number;
   remainingDurationMinutes: number;
   isOffRoute: boolean;
+  isApproachingOrigin?: boolean;
   offRouteDistanceMeters: number;
   onStopNavigation: () => void;
   onRecalculate?: () => void;
@@ -22,6 +23,7 @@ export const NavigationHud: React.FC<NavigationHudProps> = ({
   remainingDistanceKm,
   remainingDurationMinutes,
   isOffRoute,
+  isApproachingOrigin = false,
   offRouteDistanceMeters,
   onStopNavigation,
   onRecalculate,
@@ -50,6 +52,25 @@ export const NavigationHud: React.FC<NavigationHudProps> = ({
           <div className="bg-slate-900/90 text-amber-200 rounded-xl px-3.5 py-2 text-xs font-semibold border border-amber-500/50 shadow-lg flex items-center gap-2">
             <span>ℹ️</span>
             <span>{gpsNotice}</span>
+          </div>
+        )}
+
+        {/* Approaching Route Origin Guidance */}
+        {isApproachingOrigin && !isOffRoute && (
+          <div className="bg-blue-900/90 backdrop-blur-md text-white rounded-2xl p-3 shadow-xl flex items-center justify-between gap-3 border border-blue-400/40">
+            <div className="flex items-center gap-2.5">
+              <span className="text-xl">📍</span>
+              <div>
+                <div className="font-extrabold text-sm">
+                  {isHindi ? 'मार्ग के आरंभ बिंदु की ओर बढ़ें' : 'Approaching Route Start'} ({offRouteDistanceMeters}m)
+                </div>
+                <div className="text-[11px] text-blue-200">
+                  {isHindi
+                    ? 'कृपया मुख्य राष्ट्रीय राजमार्ग / अधिकृत मार्ग की ओर बढ़ें।'
+                    : 'Navigating towards verified freight corridor.'}
+                </div>
+              </div>
+            </div>
           </div>
         )}
 

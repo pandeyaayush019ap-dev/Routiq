@@ -20,6 +20,7 @@ export interface NavigationStatus {
   remainingDistanceKm: number;
   remainingDurationMinutes: number;
   isOffRoute: boolean;
+  isApproachingOrigin?: boolean;
   offRouteDistanceMeters: number;
   currentManeuver: ManeuverInfo | null;
   activeStepIndex: number;
@@ -38,30 +39,63 @@ export class NavigationEngine {
     remainingDistanceKm: number;
     remainingDurationMinutes: number;
     isOffRoute: boolean;
+    isApproachingOrigin: boolean;
     offRouteDistanceMeters: number;
     currentManeuver: ManeuverInfo;
     activeStepIndex: number;
   } {
-    const coords = route.geometry.coordinates;
+    const rawCoords = route.geometry?.coordinates || [];
+    const coords = rawCoords.filter(
+      (c) => Array.isArray(c) && c.length >= 2 && !isNaN(c[0]) && !isNaN(c[1])
+    );
+
+    if (coords.length < 2) {
+      return {
+        remainingDistanceKm: route.distanceKm || 0,
+        remainingDurationMinutes: route.durationMinutes || 0,
+        isOffRoute: false,
+        isApproachingOrigin: false,
+        offRouteDistanceMeters: 0,
+        activeStepIndex: 0,
+        currentManeuver: {
+          icon: '⬆',
+          instructionEn: route.turnSteps?.en?.[0] || 'Proceed on route',
+          instructionHi: route.turnSteps?.hi?.[0] || 'मार्ग पर आगे बढ़ें',
+          distanceToManeuverMeters: 500,
+          formattedDistance: '500 m',
+          isDestination: false,
+        },
+      };
+    }
+
     const pt = turf.point([position.longitude, position.latitude]);
     const line = turf.lineString(coords);
 
     // 1. Off-Route Check using Turf point-to-line distance
     const distToLineKm = turf.pointToLineDistance(pt, line, { units: 'kilometers' });
     const offRouteDistanceMeters = Math.round(distToLineKm * 1000);
-    // Flag off-route if driver is between 85m and 5000m away from the route polyline
-    const isOffRoute = offRouteDistanceMeters > 85;
 
-    // 2. Distance from current point to destination (last coordinate)
+    // 2. Proximity to route origin and destination
     const destCoord = coords[coords.length - 1];
     const destPt = turf.point(destCoord);
     const originCoord = coords[0];
     const originPt = turf.point(originCoord);
     const distToOriginKm = turf.distance(pt, originPt, { units: 'kilometers' });
 
+    // Dynamic GPS tolerance accounting for browser/phone GPS accuracy noise (e.g. ±115m)
+    const accuracyNoise = Math.max(30, position.accuracy || 30);
+    const dynamicToleranceMeters = Math.max(150, Math.round(accuracyNoise * 1.5));
+
+    // Approaching Corridor: At trip start, driver is at yard/depot within 3.5 km of origin
+    const isApproachingOrigin = distToOriginKm <= 3.5 && offRouteDistanceMeters > dynamicToleranceMeters;
+
+    // Genuine off-route violation occurs only when not approaching start and deviating beyond GPS noise
+    const isOffRoute = !isApproachingOrigin && offRouteDistanceMeters > dynamicToleranceMeters;
+
+    // Distance calculation
     let remainingDistanceKm: number;
     if (distToLineKm > 5.0) {
-      // Driver is far from the route corridor (e.g. testing remotely or approaching route)
+      // Driver is far from the route corridor (e.g. approaching from distance)
       remainingDistanceKm = Math.round((route.distanceKm + distToOriginKm) * 10) / 10;
     } else {
       const distToDestKm = turf.distance(pt, destPt, { units: 'kilometers' });
@@ -73,8 +107,8 @@ export class NavigationEngine {
     const remainingDurationMinutes = Math.max(1, Math.round((remainingDistanceKm / effectiveSpeed) * 60));
 
     // 3. Step & Maneuver Tracking
-    const stepsEn = route.turnSteps.en;
-    const stepsHi = route.turnSteps.hi;
+    const stepsEn = route.turnSteps?.en || [];
+    const stepsHi = route.turnSteps?.hi || [];
     const stepCount = stepsEn.length;
 
     // Estimate active step index proportionally by progress along route
@@ -88,13 +122,16 @@ export class NavigationEngine {
     let instructionEn = stepsEn[activeStepIndex] || 'Continue on route';
     let instructionHi = stepsHi[activeStepIndex] || 'मार्ग पर आगे बढ़ते रहें';
 
-    if (distToLineKm > 5.0) {
+    if (isApproachingOrigin) {
+      instructionEn = `Head towards route start (${offRouteDistanceMeters}m away)`;
+      instructionHi = `मार्ग के प्रारंभ बिंदु की ओर बढ़ें (${offRouteDistanceMeters} मी दूर)`;
+    } else if (distToLineKm > 5.0) {
       instructionEn = `Head towards route start (${distToOriginKm.toFixed(1)} km away)`;
       instructionHi = `मार्ग के प्रारंभ बिंदु की ओर बढ़ें (${distToOriginKm.toFixed(1)} किमी दूर)`;
     }
 
     // Maneuver icon heuristic
-    const icon = distToLineKm > 5.0 ? '⬆' : this.resolveManeuverIcon(instructionEn, remainingDistanceKm);
+    const icon = isApproachingOrigin || distToLineKm > 5.0 ? '⬆' : this.resolveManeuverIcon(instructionEn, remainingDistanceKm);
 
     // Distance to next step
     const distanceToManeuverMeters = Math.round((remainingDistanceKm / Math.max(1, stepCount - activeStepIndex)) * 1000);
@@ -109,6 +146,7 @@ export class NavigationEngine {
       remainingDistanceKm,
       remainingDurationMinutes,
       isOffRoute,
+      isApproachingOrigin,
       offRouteDistanceMeters,
       activeStepIndex,
       currentManeuver: {

@@ -147,17 +147,39 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
     const allCoords: [number, number][] = [];
 
     // --- 1. Manage Alternative Routes Polylines ---
+    // Clean up stale alternative route layers/sources from previous queries
+    let altCleanIdx = alternativeRoutes.length;
+    while (map.getLayer(`alt-route-layer-${altCleanIdx}`)) {
+      map.removeLayer(`alt-route-layer-${altCleanIdx}`);
+      if (map.getSource(`alt-route-src-${altCleanIdx}`)) {
+        map.removeSource(`alt-route-src-${altCleanIdx}`);
+      }
+      altCleanIdx++;
+    }
+
     alternativeRoutes.forEach((altRoute, index) => {
       const sourceId = `alt-route-src-${index}`;
       const layerId = `alt-route-layer-${index}`;
 
-      const geojsonData: Feature<LineString> = {
-        type: 'Feature',
-        properties: { id: altRoute.id },
-        geometry: {
-          type: 'LineString',
-          coordinates: altRoute.geometry.coordinates,
-        },
+      const rawAltCoords = altRoute.geometry?.coordinates || [];
+      const validAltCoords = rawAltCoords
+        .filter((c) => Array.isArray(c) && c.length >= 2 && !isNaN(c[0]) && !isNaN(c[1]))
+        .map((c) => [Number(c[0]), Number(c[1])] as [number, number]);
+
+      validAltCoords.forEach((c) => allCoords.push(c));
+
+      const geojsonData: GeoJSON.FeatureCollection<LineString> = {
+        type: 'FeatureCollection',
+        features: [
+          {
+            type: 'Feature',
+            properties: { id: altRoute.id },
+            geometry: {
+              type: 'LineString',
+              coordinates: validAltCoords,
+            },
+          },
+        ],
       };
 
       if (map.getSource(sourceId)) {
@@ -167,7 +189,9 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
           type: 'geojson',
           data: geojsonData,
         });
+      }
 
+      if (!map.getLayer(layerId)) {
         map.addLayer({
           id: layerId,
           type: 'line',
@@ -175,6 +199,7 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
           layout: {
             'line-join': 'round',
             'line-cap': 'round',
+            visibility: 'visible',
           },
           paint: {
             'line-color': '#64748B',
@@ -195,26 +220,39 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
         map.on('mouseleave', layerId, () => {
           map.getCanvas().style.cursor = '';
         });
+      } else {
+        map.setLayoutProperty(layerId, 'visibility', 'visible');
       }
     });
 
     // --- 2. Manage Selected Route Polyline ---
-    if (selectedRoute) {
-      const selectedSourceId = 'selected-route-src';
-      const selectedLayerCasingId = 'selected-route-casing';
-      const selectedLayerId = 'selected-route-layer';
+    const selectedSourceId = 'selected-route-src';
+    const selectedLayerCasingId = 'selected-route-casing';
+    const selectedLayerId = 'selected-route-layer';
 
-      const selectedGeoJson: Feature<LineString> = {
-        type: 'Feature',
-        properties: { id: selectedRoute.id },
-        geometry: {
-          type: 'LineString',
-          coordinates: selectedRoute.geometry.coordinates,
-        },
+    if (selectedRoute) {
+      const rawCoords = selectedRoute.geometry?.coordinates || [];
+      const validCoords: [number, number][] = rawCoords
+        .filter((c) => Array.isArray(c) && c.length >= 2 && !isNaN(c[0]) && !isNaN(c[1]))
+        .map((c) => [Number(c[0]), Number(c[1])] as [number, number]);
+
+      validCoords.forEach((c) => allCoords.push(c));
+
+      const selectedGeoJson: GeoJSON.FeatureCollection<LineString> = {
+        type: 'FeatureCollection',
+        features: [
+          {
+            type: 'Feature',
+            properties: { id: selectedRoute.id, name: selectedRoute.name?.en || 'Selected Route' },
+            geometry: {
+              type: 'LineString',
+              coordinates: validCoords,
+            },
+          },
+        ],
       };
 
-      selectedRoute.geometry.coordinates.forEach((c) => allCoords.push(c));
-
+      // 2a. Source Management (Add or SetData)
       if (map.getSource(selectedSourceId)) {
         (map.getSource(selectedSourceId) as maplibregl.GeoJSONSource).setData(selectedGeoJson);
       } else {
@@ -222,8 +260,10 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
           type: 'geojson',
           data: selectedGeoJson,
         });
+      }
 
-        // White casing border
+      // 2b. High-Contrast White Casing Border Layer
+      if (!map.getLayer(selectedLayerCasingId)) {
         map.addLayer({
           id: selectedLayerCasingId,
           type: 'line',
@@ -231,14 +271,20 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
           layout: {
             'line-join': 'round',
             'line-cap': 'round',
+            visibility: 'visible',
           },
           paint: {
             'line-color': '#FFFFFF',
-            'line-width': 9,
+            'line-width': 10,
+            'line-opacity': 0.95,
           },
         });
+      } else {
+        map.setLayoutProperty(selectedLayerCasingId, 'visibility', 'visible');
+      }
 
-        // Main blue polyline
+      // 2c. Main Heavy Vehicle Royal Blue Polyline Layer
+      if (!map.getLayer(selectedLayerId)) {
         map.addLayer({
           id: selectedLayerId,
           type: 'line',
@@ -246,16 +292,24 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
           layout: {
             'line-join': 'round',
             'line-cap': 'round',
+            visibility: 'visible',
           },
           paint: {
             'line-color': '#2563EB',
             'line-width': 6,
+            'line-opacity': 1.0,
           },
         });
+      } else {
+        map.setLayoutProperty(selectedLayerId, 'visibility', 'visible');
       }
 
+      // 2d. Strictly bring selected route layers to the TOP of the layer stack
+      map.moveLayer(selectedLayerCasingId);
+      map.moveLayer(selectedLayerId);
+
       // Add Restriction Markers
-      selectedRoute.restrictions.forEach((restr) => {
+      (selectedRoute.restrictions || []).forEach((restr) => {
         const el = document.createElement('div');
         const isBlocked = restr.status === 'BLOCKED';
         el.className = `w-7 h-7 rounded-full flex items-center justify-center font-black text-xs text-white border-2 border-white shadow-lg cursor-pointer transform hover:scale-125 transition-transform ${
@@ -275,6 +329,14 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
 
         markersRef.current.push(marker);
       });
+    } else {
+      // Hide route layers if no active route
+      if (map.getLayer(selectedLayerId)) {
+        map.setLayoutProperty(selectedLayerId, 'visibility', 'none');
+      }
+      if (map.getLayer(selectedLayerCasingId)) {
+        map.setLayoutProperty(selectedLayerCasingId, 'visibility', 'none');
+      }
     }
 
     // --- 3. Add Origin Marker (A) ---
@@ -307,8 +369,8 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
       markersRef.current.push(destMarker);
     }
 
-    // --- 5. Fit Bounds to Route ---
-    if (allCoords.length >= 2) {
+    // --- 5. Fit Bounds to Route (Only when not in active GPS navigation follow mode) ---
+    if (allCoords.length >= 2 && !isNavigating) {
       const bounds = calculateBounds(allCoords);
       map.fitBounds(
         [
@@ -329,6 +391,7 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
     origin,
     destination,
     isHindi,
+    isNavigating,
     onSelectRoute,
     onSelectRestriction,
   ]);
@@ -544,6 +607,31 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
     });
   };
 
+  // Re-frame the active route on the map
+  const handleFitRouteOverview = () => {
+    const map = mapRef.current;
+    if (!map || !selectedRoute) return;
+    const rawCoords = selectedRoute.geometry?.coordinates || [];
+    const validCoords: [number, number][] = rawCoords
+      .filter((c) => Array.isArray(c) && c.length >= 2 && !isNaN(c[0]) && !isNaN(c[1]))
+      .map((c) => [Number(c[0]), Number(c[1])] as [number, number]);
+
+    if (validCoords.length >= 2) {
+      const bounds = calculateBounds(validCoords);
+      map.fitBounds(
+        [
+          [bounds.minLng, bounds.minLat],
+          [bounds.maxLng, bounds.maxLat],
+        ],
+        {
+          padding: { top: 60, bottom: 60, left: 60, right: 60 },
+          maxZoom: 13,
+          duration: 800,
+        }
+      );
+    }
+  };
+
   if (mapError) {
     return (
       <MapFallback
@@ -576,6 +664,17 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
           <span>📍</span>
           <span>Western India</span>
         </button>
+
+        {selectedRoute && (
+          <button
+            onClick={handleFitRouteOverview}
+            className="bg-white/95 backdrop-blur-sm border border-blue-200 px-3 py-1.5 rounded-xl shadow-sm text-xs font-semibold text-blue-700 hover:bg-blue-50 transition-colors flex items-center gap-1.5"
+            title="Fit Active Route to Screen"
+          >
+            <span>🧭</span>
+            <span>{isHindi ? 'पूरा मार्ग देखें' : 'Route Overview'}</span>
+          </button>
+        )}
 
         <button
           onClick={() => setShowPois(!showPois)}

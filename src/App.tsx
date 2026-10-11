@@ -47,6 +47,7 @@ const AppContent: React.FC = () => {
   const [remainingDistanceKm, setRemainingDistanceKm] = useState<number>(0);
   const [remainingDurationMinutes, setRemainingDurationMinutes] = useState<number>(0);
   const [isOffRoute, setIsOffRoute] = useState<boolean>(false);
+  const [isApproachingOrigin, setIsApproachingOrigin] = useState<boolean>(false);
   const [offRouteDistanceMeters, setOffRouteDistanceMeters] = useState<number>(0);
   const [navError, setNavError] = useState<string | null>(null);
   const [gpsNotice, setGpsNotice] = useState<string | null>(null);
@@ -182,6 +183,7 @@ const AppContent: React.FC = () => {
       setRemainingDistanceKm(evalState.remainingDistanceKm);
       setRemainingDurationMinutes(evalState.remainingDurationMinutes);
       setIsOffRoute(evalState.isOffRoute);
+      setIsApproachingOrigin(evalState.isApproachingOrigin);
       setOffRouteDistanceMeters(evalState.offRouteDistanceMeters);
 
       // 5. Start continuous watchPosition tracking
@@ -196,6 +198,7 @@ const AppContent: React.FC = () => {
           setRemainingDistanceKm(nextState.remainingDistanceKm);
           setRemainingDurationMinutes(nextState.remainingDurationMinutes);
           setIsOffRoute(nextState.isOffRoute);
+          setIsApproachingOrigin(nextState.isApproachingOrigin);
           setOffRouteDistanceMeters(nextState.offRouteDistanceMeters);
         },
         onError: (err) => {
@@ -232,6 +235,7 @@ const AppContent: React.FC = () => {
     setDriverPosition(null);
     setCurrentManeuver(null);
     setIsOffRoute(false);
+    setIsApproachingOrigin(false);
     setNavError(null);
     setGpsNotice(null);
   };
@@ -319,6 +323,7 @@ const AppContent: React.FC = () => {
                   remainingDistanceKm={remainingDistanceKm}
                   remainingDurationMinutes={remainingDurationMinutes}
                   isOffRoute={isOffRoute}
+                  isApproachingOrigin={isApproachingOrigin}
                   offRouteDistanceMeters={offRouteDistanceMeters}
                   onStopNavigation={handleStopNavigation}
                   onRecalculate={() => {
