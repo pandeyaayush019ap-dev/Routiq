@@ -1,7 +1,7 @@
 import React from 'react';
 import { useTranslation } from '../../i18n/context';
 
-export type ActiveTab = 'plan' | 'vehicles' | 'settings';
+export type ActiveTab = 'plan' | 'vehicles' | 'fleet' | 'settings';
 
 interface NavigationProps {
   activeTab: ActiveTab;
@@ -14,11 +14,12 @@ export const Navigation: React.FC<NavigationProps> = ({
   onTabChange,
   vehicleCount,
 }) => {
-  const { t } = useTranslation();
+  const { t, isHindi } = useTranslation();
 
   const tabs: { id: ActiveTab; label: string; icon: string; count?: number }[] = [
     { id: 'plan', label: t('navPlan'), icon: '🧭' },
     { id: 'vehicles', label: t('navVehicles'), icon: '🚛', count: vehicleCount },
+    { id: 'fleet', label: isHindi ? 'फ्लीट डैशबोर्ड' : 'Live Fleet', icon: '📡' },
     { id: 'settings', label: t('navSettings'), icon: '⚙️' },
   ];
 

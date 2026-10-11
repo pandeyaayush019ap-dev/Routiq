@@ -9,6 +9,8 @@ interface RouteResultsProps {
   departureTime?: string;
   onSelectRoute: (routeId: string) => void;
   onSelectRestriction: (restriction: RoadRestriction) => void;
+  onStartNavigation?: (route: RouteCandidate) => void;
+  isNavigating?: boolean;
 }
 
 export const RouteResults: React.FC<RouteResultsProps> = ({
@@ -17,6 +19,8 @@ export const RouteResults: React.FC<RouteResultsProps> = ({
   departureTime,
   onSelectRoute,
   onSelectRestriction,
+  onStartNavigation,
+  isNavigating = false,
 }) => {
   const { t, isHindi } = useTranslation();
   const [expandedTurns, setExpandedTurns] = useState<Record<string, boolean>>({});
@@ -185,13 +189,44 @@ export const RouteResults: React.FC<RouteResultsProps> = ({
               )}
             </div>
 
-            {/* Action to select route on map */}
-            <div className="mt-3">
+            {/* Action Buttons: Select Route & Start Live Navigation */}
+            <div className="mt-3.5 space-y-2">
+              {isSelected && onStartNavigation && (
+                <button
+                  type="button"
+                  disabled={isBlocked}
+                  onClick={() => onStartNavigation(route)}
+                  className={`w-full py-3 rounded-xl font-black text-sm transition-all flex items-center justify-center gap-2 shadow-md cursor-pointer ${
+                    isBlocked
+                      ? 'bg-slate-200 text-slate-400 cursor-not-allowed'
+                      : isNavigating
+                      ? 'bg-emerald-600 text-white animate-pulse'
+                      : 'bg-emerald-600 hover:bg-emerald-700 active:scale-[0.98] text-white shadow-emerald-600/20'
+                  }`}
+                >
+                  <span className="text-base">{isNavigating ? '📍' : '🧭'}</span>
+                  <span>
+                    {isBlocked
+                      ? isHindi
+                        ? 'प्रतिबंधित मार्ग (नेविगेशन अनुपलब्ध)'
+                        : 'Blocked Route (Navigation Unavailable)'
+                      : isNavigating
+                      ? isHindi
+                        ? 'नेविगेशन सक्रिय है'
+                        : 'Navigation in Progress'
+                      : isHindi
+                      ? 'नेविगेशन शुरू करें'
+                      : 'Start Navigation'}
+                  </span>
+                </button>
+              )}
+
               <button
+                type="button"
                 onClick={() => onSelectRoute(route.id)}
                 className={`w-full py-2.5 rounded-xl font-bold text-xs sm:text-sm transition-colors flex items-center justify-center gap-2 ${
                   isSelected
-                    ? 'bg-blue-600 text-white shadow-xs'
+                    ? 'bg-blue-50 text-blue-700 border border-blue-300'
                     : 'bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-200'
                 }`}
               >

@@ -42,6 +42,9 @@ var InMemoryDatabase = class {
     this.users = /* @__PURE__ */ new Map();
     this.vehicles = /* @__PURE__ */ new Map();
     this.savedRoutes = /* @__PURE__ */ new Map();
+    this.trips = /* @__PURE__ */ new Map();
+    this.telemetry = [];
+    this.vehicleLiveState = /* @__PURE__ */ new Map();
     this.seedDefaults();
   }
   seedDefaults() {
@@ -87,6 +90,34 @@ var InMemoryDatabase = class {
     for (const v of defaultVehicles) {
       this.vehicles.set(v.id, v);
     }
+    this.vehicleLiveState.set("veh_default_01", {
+      vehicle_id: "veh_default_01",
+      vehicle_name: "Tata Signa 4825.TK Tipper",
+      registration_number: "MH12AB1234",
+      driver_name: "Rajesh Kumar (\u0930\u093E\u091C\u0947\u0936 \u0915\u0941\u092E\u093E\u0930)",
+      latitude: 18.751,
+      longitude: 73.401,
+      accuracy: 8.5,
+      heading: 135,
+      speed: 46.2,
+      // Moving along Old NH-48 / Lonavala
+      status: "MOVING",
+      updated_at: (/* @__PURE__ */ new Date()).toISOString()
+    });
+    this.vehicleLiveState.set("veh_default_02", {
+      vehicle_id: "veh_default_02",
+      vehicle_name: "Ashok Leyland 5525 Prime Mover",
+      registration_number: "MH04AZ9940",
+      driver_name: "Gurmeet Singh (\u0917\u0941\u0930\u092E\u0940\u0924 \u0938\u093F\u0902\u0939)",
+      latitude: 18.9894,
+      longitude: 73.1175,
+      accuracy: 6,
+      heading: 0,
+      speed: 0,
+      // Stationary at Panvel Freight Logistics Park
+      status: "STATIONARY",
+      updated_at: new Date(Date.now() - 45e3).toISOString()
+    });
   }
 };
 var DatabaseService = class {
@@ -177,6 +208,141 @@ var DatabaseService = class {
     const route = this.memDb.savedRoutes.get(id);
     if (!route || route.user_id !== userId) return false;
     return this.memDb.savedRoutes.delete(id);
+  }
+  // --- Trips Repository ---
+  async createTrip(trip) {
+    const fullTrip = {
+      ...trip,
+      started_at: (/* @__PURE__ */ new Date()).toISOString()
+    };
+    this.memDb.trips.set(fullTrip.id, fullTrip);
+    return fullTrip;
+  }
+  async endTrip(tripId, userId) {
+    const existing = this.memDb.trips.get(tripId);
+    if (!existing) return null;
+    if (userId && existing.user_id && existing.user_id !== userId) return null;
+    const updated = {
+      ...existing,
+      status: "COMPLETED",
+      ended_at: (/* @__PURE__ */ new Date()).toISOString()
+    };
+    this.memDb.trips.set(tripId, updated);
+    const live = this.memDb.vehicleLiveState.get(existing.vehicle_id);
+    if (live && live.active_trip_id === tripId) {
+      live.active_trip_id = void 0;
+      live.status = "STATIONARY";
+      live.speed = 0;
+      live.updated_at = (/* @__PURE__ */ new Date()).toISOString();
+    }
+    return updated;
+  }
+  async getTripById(tripId) {
+    return this.memDb.trips.get(tripId) || null;
+  }
+  async getActiveTripByVehicle(vehicleId) {
+    for (const trip of this.memDb.trips.values()) {
+      if (trip.vehicle_id === vehicleId && trip.status === "IN_PROGRESS") {
+        return trip;
+      }
+    }
+    return null;
+  }
+  // --- Telemetry Repository ---
+  async recordTelemetry(data) {
+    const point3 = {
+      ...data,
+      id: `tel_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`
+    };
+    this.memDb.telemetry.push(point3);
+    if (this.memDb.telemetry.length > 1e4) {
+      this.memDb.telemetry.splice(0, 2e3);
+    }
+    const speed = data.speed ?? 0;
+    const status = speed > 2 ? "MOVING" : "STATIONARY";
+    const vehicle = this.memDb.vehicles.get(data.vehicle_id);
+    const currentLive = this.memDb.vehicleLiveState.get(data.vehicle_id);
+    const updatedLive = {
+      vehicle_id: data.vehicle_id,
+      user_id: data.user_id || currentLive?.user_id,
+      driver_name: currentLive?.driver_name || "Assigned Driver",
+      registration_number: vehicle?.registration_number || currentLive?.registration_number,
+      vehicle_name: vehicle?.name || currentLive?.vehicle_name || "Commercial Freight Truck",
+      latitude: data.latitude,
+      longitude: data.longitude,
+      accuracy: data.accuracy,
+      heading: data.heading,
+      speed: data.speed,
+      status,
+      active_trip_id: data.trip_id || currentLive?.active_trip_id,
+      updated_at: data.timestamp
+    };
+    this.memDb.vehicleLiveState.set(data.vehicle_id, updatedLive);
+    return point3;
+  }
+  async getTelemetryByTrip(tripId) {
+    return this.memDb.telemetry.filter((t) => t.trip_id === tripId);
+  }
+  async getTelemetryByVehicle(vehicleId, limit = 100) {
+    return this.memDb.telemetry.filter((t) => t.vehicle_id === vehicleId).slice(-limit);
+  }
+  // --- Fleet Repository ---
+  async getFleetVehicles(userId) {
+    const now = Date.now();
+    const states = Array.from(this.memDb.vehicleLiveState.values());
+    return states.map((state) => {
+      const diffMs = now - new Date(state.updated_at).getTime();
+      let status = state.status;
+      if (diffMs > 10 * 60 * 1e3) {
+        status = "OFFLINE";
+      } else if (diffMs > 2 * 60 * 1e3) {
+        status = "STALE";
+      } else if ((state.speed ?? 0) > 2) {
+        status = "MOVING";
+      } else {
+        status = "STATIONARY";
+      }
+      return {
+        ...state,
+        status
+      };
+    }).filter((v) => !userId || !v.user_id || v.user_id === userId);
+  }
+  async getVehicleLiveState(vehicleId) {
+    const state = this.memDb.vehicleLiveState.get(vehicleId);
+    if (!state) return null;
+    const diffMs = Date.now() - new Date(state.updated_at).getTime();
+    let status = state.status;
+    if (diffMs > 10 * 60 * 1e3) {
+      status = "OFFLINE";
+    } else if (diffMs > 2 * 60 * 1e3) {
+      status = "STALE";
+    } else if ((state.speed ?? 0) > 2) {
+      status = "MOVING";
+    } else {
+      status = "STATIONARY";
+    }
+    return { ...state, status };
+  }
+  async updateVehicleLiveState(state) {
+    const existing = this.memDb.vehicleLiveState.get(state.vehicle_id);
+    const updated = {
+      vehicle_id: state.vehicle_id,
+      user_id: state.user_id ?? existing?.user_id,
+      driver_name: state.driver_name ?? existing?.driver_name ?? "Assigned Driver",
+      registration_number: state.registration_number ?? existing?.registration_number,
+      vehicle_name: state.vehicle_name ?? existing?.vehicle_name ?? "Commercial Truck",
+      latitude: state.latitude ?? existing?.latitude ?? 0,
+      longitude: state.longitude ?? existing?.longitude ?? 0,
+      accuracy: state.accuracy ?? existing?.accuracy,
+      heading: state.heading ?? existing?.heading,
+      speed: state.speed ?? existing?.speed,
+      status: state.status ?? existing?.status ?? "STATIONARY",
+      active_trip_id: state.active_trip_id ?? existing?.active_trip_id,
+      updated_at: (/* @__PURE__ */ new Date()).toISOString()
+    };
+    this.memDb.vehicleLiveState.set(state.vehicle_id, updated);
+    return updated;
   }
 };
 var db = new DatabaseService();
@@ -2312,6 +2478,246 @@ gisRouter.post("/gis/evaluate-line", (req, res) => {
   }
 });
 
+// src/server/routes/tripRoutes.ts
+import { Router as Router8 } from "express";
+import { z as z2 } from "zod";
+var tripRouter = Router8();
+var StartTripSchema = z2.object({
+  vehicleId: z2.string().min(1, "vehicleId is required"),
+  originName: z2.string().min(1, "originName is required"),
+  destinationName: z2.string().min(1, "destinationName is required"),
+  routeId: z2.string().optional(),
+  distanceKm: z2.number().positive("distanceKm must be positive")
+});
+var TelemetrySchema = z2.object({
+  tripId: z2.string().optional(),
+  vehicleId: z2.string().min(1, "vehicleId is required"),
+  latitude: z2.number().min(-90).max(90, "Invalid latitude coordinate"),
+  longitude: z2.number().min(-180).max(180, "Invalid longitude coordinate"),
+  accuracy: z2.number().nonnegative().optional(),
+  heading: z2.number().min(0).max(360).optional(),
+  speed: z2.number().nonnegative().optional(),
+  // speed in km/h or m/s
+  timestamp: z2.string().optional()
+});
+var EndTripSchema = z2.object({
+  tripId: z2.string().min(1, "tripId is required")
+});
+tripRouter.post("/trips/start", optionalAuth, async (req, res) => {
+  try {
+    const parseRes = StartTripSchema.safeParse(req.body);
+    if (!parseRes.success) {
+      res.status(400).json({
+        error: "VALIDATION_ERROR",
+        details: parseRes.error.format()
+      });
+      return;
+    }
+    const { vehicleId, originName, destinationName, routeId, distanceKm } = parseRes.data;
+    const userId = req.user?.userId;
+    const vehicle = await db.getVehicleById(vehicleId);
+    if (!vehicle) {
+      res.status(404).json({
+        error: "VEHICLE_NOT_FOUND",
+        message: `Vehicle ${vehicleId} not found.`
+      });
+      return;
+    }
+    if (userId && vehicle.user_id && vehicle.user_id !== userId) {
+      res.status(403).json({
+        error: "FORBIDDEN",
+        message: "You are not authorized to start a trip with this vehicle."
+      });
+      return;
+    }
+    const tripId = `trip_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+    const trip = await db.createTrip({
+      id: tripId,
+      user_id: userId,
+      vehicle_id: vehicleId,
+      origin_name: originName,
+      destination_name: destinationName,
+      route_id: routeId,
+      distance_km: distanceKm,
+      status: "IN_PROGRESS"
+    });
+    await db.updateVehicleLiveState({
+      vehicle_id: vehicleId,
+      user_id: userId,
+      active_trip_id: tripId,
+      status: "STATIONARY"
+    });
+    res.status(201).json({
+      success: true,
+      trip,
+      message: "Driver trip started successfully."
+    });
+  } catch (err) {
+    console.error("[Trip API] start error:", err);
+    res.status(500).json({
+      error: "TRIP_START_FAILED",
+      message: "Failed to start navigation trip."
+    });
+  }
+});
+tripRouter.post("/trips/track", optionalAuth, async (req, res) => {
+  try {
+    const parseRes = TelemetrySchema.safeParse(req.body);
+    if (!parseRes.success) {
+      res.status(400).json({
+        error: "INVALID_TELEMETRY_DATA",
+        details: parseRes.error.format()
+      });
+      return;
+    }
+    const { tripId, vehicleId, latitude, longitude, accuracy, heading, speed, timestamp } = parseRes.data;
+    const userId = req.user?.userId;
+    if (latitude === 0 && longitude === 0) {
+      res.status(400).json({
+        error: "NULL_ISLAND_COORDINATE",
+        message: "Invalid coordinate (0, 0) received."
+      });
+      return;
+    }
+    const point3 = await db.recordTelemetry({
+      trip_id: tripId,
+      vehicle_id: vehicleId,
+      user_id: userId,
+      latitude,
+      longitude,
+      accuracy,
+      heading,
+      speed,
+      timestamp: timestamp || (/* @__PURE__ */ new Date()).toISOString()
+    });
+    res.status(200).json({
+      success: true,
+      telemetryId: point3.id,
+      timestamp: point3.timestamp
+    });
+  } catch (err) {
+    console.error("[Trip API] track error:", err);
+    res.status(500).json({
+      error: "TELEMETRY_RECORD_FAILED",
+      message: "Failed to process driver GPS telemetry."
+    });
+  }
+});
+tripRouter.post("/trips/end", optionalAuth, async (req, res) => {
+  try {
+    const parseRes = EndTripSchema.safeParse(req.body);
+    if (!parseRes.success) {
+      res.status(400).json({
+        error: "VALIDATION_ERROR",
+        details: parseRes.error.format()
+      });
+      return;
+    }
+    const { tripId } = parseRes.data;
+    const userId = req.user?.userId;
+    const updated = await db.endTrip(tripId, userId);
+    if (!updated) {
+      res.status(404).json({
+        error: "TRIP_NOT_FOUND",
+        message: `Active trip ${tripId} not found or you are not authorized to end it.`
+      });
+      return;
+    }
+    res.status(200).json({
+      success: true,
+      trip: updated,
+      message: "Driver trip ended successfully."
+    });
+  } catch (err) {
+    console.error("[Trip API] end error:", err);
+    res.status(500).json({
+      error: "TRIP_END_FAILED",
+      message: "Failed to end navigation trip."
+    });
+  }
+});
+tripRouter.get("/trips/:tripId/history", optionalAuth, async (req, res) => {
+  try {
+    const tripId = req.params.tripId;
+    const trip = await db.getTripById(tripId);
+    if (!trip) {
+      res.status(404).json({
+        error: "TRIP_NOT_FOUND",
+        message: `Trip ${tripId} not found.`
+      });
+      return;
+    }
+    const history = await db.getTelemetryByTrip(tripId);
+    res.status(200).json({
+      trip,
+      history,
+      count: history.length
+    });
+  } catch (err) {
+    console.error("[Trip API] history error:", err);
+    res.status(500).json({
+      error: "HISTORY_FETCH_FAILED",
+      message: "Failed to fetch trip telemetry history."
+    });
+  }
+});
+
+// src/server/routes/fleetRoutes.ts
+import { Router as Router9 } from "express";
+var fleetRouter = Router9();
+fleetRouter.get("/fleet/vehicles", optionalAuth, async (req, res) => {
+  try {
+    const userId = req.user?.userId;
+    const fleet = await db.getFleetVehicles(userId);
+    const summary = {
+      total: fleet.length,
+      moving: fleet.filter((v) => v.status === "MOVING").length,
+      stationary: fleet.filter((v) => v.status === "STATIONARY").length,
+      stale: fleet.filter((v) => v.status === "STALE").length,
+      offline: fleet.filter((v) => v.status === "OFFLINE").length
+    };
+    res.status(200).json({
+      success: true,
+      summary,
+      vehicles: fleet,
+      timestamp: (/* @__PURE__ */ new Date()).toISOString()
+    });
+  } catch (err) {
+    console.error("[Fleet API] vehicles error:", err);
+    res.status(500).json({
+      error: "FLEET_FETCH_FAILED",
+      message: "Failed to retrieve fleet vehicle states."
+    });
+  }
+});
+fleetRouter.get("/fleet/vehicles/:vehicleId/history", optionalAuth, async (req, res) => {
+  try {
+    const vehicleId = req.params.vehicleId;
+    const limit = parseInt(req.query.limit, 10) || 50;
+    const vehicle = await db.getVehicleLiveState(vehicleId);
+    if (!vehicle) {
+      res.status(404).json({
+        error: "VEHICLE_NOT_FOUND",
+        message: `Vehicle ${vehicleId} not found in fleet.`
+      });
+      return;
+    }
+    const history = await db.getTelemetryByVehicle(vehicleId, limit);
+    res.status(200).json({
+      success: true,
+      vehicle,
+      history,
+      count: history.length
+    });
+  } catch (err) {
+    console.error("[Fleet API] history error:", err);
+    res.status(500).json({
+      error: "HISTORY_FETCH_FAILED",
+      message: "Failed to fetch vehicle telemetry history."
+    });
+  }
+});
+
 // src/server/app.ts
 function createApp() {
   const app2 = express();
@@ -2340,6 +2746,8 @@ function createApp() {
   app2.use("/api", vehicleRouter);
   app2.use("/api", authRouter);
   app2.use("/api", gisRouter);
+  app2.use("/api", tripRouter);
+  app2.use("/api", fleetRouter);
   app2.use("/api/*", (req, res) => {
     res.status(404).json({
       error: "ENDPOINT_NOT_FOUND",

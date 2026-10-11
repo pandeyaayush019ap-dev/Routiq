@@ -9,6 +9,9 @@ import { MapLegend } from './MapLegend';
 import { MapFallback } from './MapFallback';
 import { useTranslation } from '../../i18n/context';
 
+import { GpsPosition } from '../../services/navigation/geolocationService';
+import { FleetVehicle } from '../../services/fleet/fleetService';
+
 export interface CommercialPoiItem {
   id: string;
   name: string;
@@ -26,6 +29,11 @@ interface InteractiveMapProps {
   alternativeRoutes?: RouteCandidate[];
   onSelectRoute?: (routeId: string) => void;
   onSelectRestriction?: (restriction: RoadRestriction) => void;
+  driverLocation?: GpsPosition | null;
+  isNavigating?: boolean;
+  fleetVehicles?: FleetVehicle[];
+  onSelectFleetVehicle?: (vehicle: FleetVehicle) => void;
+  fleetHistoryCoordinates?: [number, number][];
 }
 
 export const InteractiveMap: React.FC<InteractiveMapProps> = ({
@@ -35,12 +43,19 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
   alternativeRoutes = [],
   onSelectRoute,
   onSelectRestriction,
+  driverLocation,
+  isNavigating = false,
+  fleetVehicles = [],
+  onSelectFleetVehicle,
+  fleetHistoryCoordinates,
 }) => {
   const { isHindi } = useTranslation();
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
   const markersRef = useRef<maplibregl.Marker[]>([]);
   const poiMarkersRef = useRef<maplibregl.Marker[]>([]);
+  const driverMarkerRef = useRef<maplibregl.Marker | null>(null);
+  const fleetMarkersRef = useRef<maplibregl.Marker[]>([]);
   const [mapError, setMapError] = useState<boolean>(false);
   const [isMapLoaded, setIsMapLoaded] = useState<boolean>(false);
 
@@ -366,6 +381,154 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
       poiMarkersRef.current.push(marker);
     });
   }, [isMapLoaded, showPois, poiList]);
+
+  // --- 1. Driver GPS Marker & Live Follow Mode ---
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !isMapLoaded) return;
+
+    if (!driverLocation) {
+      if (driverMarkerRef.current) {
+        driverMarkerRef.current.remove();
+        driverMarkerRef.current = null;
+      }
+      return;
+    }
+
+    const { latitude, longitude, heading } = driverLocation;
+
+    if (driverMarkerRef.current) {
+      driverMarkerRef.current.setLngLat([longitude, latitude]);
+      const el = driverMarkerRef.current.getElement();
+      const arrow = el.querySelector<HTMLDivElement>('.driver-heading-arrow');
+      if (arrow && typeof heading === 'number') {
+        arrow.style.transform = `rotate(${heading}deg)`;
+      }
+    } else {
+      const el = document.createElement('div');
+      el.className = 'driver-gps-puck relative flex items-center justify-center';
+      el.innerHTML = `
+        <div class="absolute w-12 h-12 rounded-full bg-blue-500/30 animate-ping"></div>
+        <div class="relative w-8 h-8 rounded-full bg-blue-600 border-2 border-white shadow-2xl flex items-center justify-center text-white">
+          <div class="driver-heading-arrow transition-transform duration-200 text-xs font-black" style="transform: rotate(${heading || 0}deg);">
+            ▲
+          </div>
+        </div>
+      `;
+
+      const marker = new maplibregl.Marker({ element: el })
+        .setLngLat([longitude, latitude])
+        .addTo(map);
+
+      driverMarkerRef.current = marker;
+    }
+
+    // Auto-center in active navigation mode
+    if (isNavigating) {
+      map.easeTo({
+        center: [longitude, latitude],
+        zoom: Math.max(map.getZoom(), 14.5),
+        duration: 900,
+      });
+    }
+  }, [isMapLoaded, driverLocation, isNavigating]);
+
+  // --- 2. Fleet Markers Layer (Fleet Dashboard) ---
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !isMapLoaded) return;
+
+    fleetMarkersRef.current.forEach((m) => m.remove());
+    fleetMarkersRef.current = [];
+
+    if (!fleetVehicles || fleetVehicles.length === 0) return;
+
+    const fleetCoords: [number, number][] = [];
+
+    fleetVehicles.forEach((veh) => {
+      fleetCoords.push([veh.longitude, veh.latitude]);
+      const el = document.createElement('div');
+      const isMoving = veh.status === 'MOVING';
+      const isStationary = veh.status === 'STATIONARY';
+      const isStale = veh.status === 'STALE';
+
+      const bgColor = isMoving
+        ? 'bg-emerald-600 ring-4 ring-emerald-300'
+        : isStationary
+        ? 'bg-amber-600 ring-4 ring-amber-300'
+        : isStale
+        ? 'bg-orange-600'
+        : 'bg-slate-500';
+
+      el.className = `w-8 h-8 rounded-full ${bgColor} text-white font-black text-xs flex items-center justify-center border-2 border-white shadow-xl cursor-pointer hover:scale-125 transition-transform`;
+      el.innerHTML = '🚛';
+      el.title = `${veh.vehicle_name} (${veh.status})`;
+
+      el.addEventListener('click', (e) => {
+        e.stopPropagation();
+        onSelectFleetVehicle?.(veh);
+      });
+
+      const marker = new maplibregl.Marker({ element: el })
+        .setLngLat([veh.longitude, veh.latitude])
+        .addTo(map);
+
+      fleetMarkersRef.current.push(marker);
+    });
+
+    // Auto-frame fleet if no route is active
+    if (!selectedRoute && fleetCoords.length >= 2) {
+      const bounds = calculateBounds(fleetCoords);
+      map.fitBounds(
+        [
+          [bounds.minLng, bounds.minLat],
+          [bounds.maxLng, bounds.maxLat],
+        ],
+        { padding: 80, maxZoom: 12, duration: 800 }
+      );
+    }
+  }, [isMapLoaded, fleetVehicles, selectedRoute, onSelectFleetVehicle]);
+
+  // --- 3. Fleet History Breadcrumb Line ---
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !isMapLoaded) return;
+
+    const sourceId = 'fleet-history-src';
+    const layerId = 'fleet-history-line';
+
+    if (!fleetHistoryCoordinates || fleetHistoryCoordinates.length < 2) {
+      if (map.getLayer(layerId)) map.removeLayer(layerId);
+      if (map.getSource(sourceId)) map.removeSource(sourceId);
+      return;
+    }
+
+    const geojsonData: Feature<LineString> = {
+      type: 'Feature',
+      properties: {},
+      geometry: {
+        type: 'LineString',
+        coordinates: fleetHistoryCoordinates,
+      },
+    };
+
+    if (map.getSource(sourceId)) {
+      (map.getSource(sourceId) as maplibregl.GeoJSONSource).setData(geojsonData);
+    } else {
+      map.addSource(sourceId, { type: 'geojson', data: geojsonData });
+      map.addLayer({
+        id: layerId,
+        type: 'line',
+        source: sourceId,
+        layout: { 'line-join': 'round', 'line-cap': 'round' },
+        paint: {
+          'line-color': '#0EA5E9',
+          'line-width': 4,
+          'line-dasharray': [1, 1],
+        },
+      });
+    }
+  }, [isMapLoaded, fleetHistoryCoordinates]);
 
   useEffect(() => {
     updateMapLayers();

@@ -32,6 +32,10 @@ export class ProductionAuthService implements IAuthService {
     }
   }
 
+  public getToken(): string | undefined {
+    return this.currentSession.token;
+  }
+
   private async verifyAndRefreshSession(): Promise<void> {
     if (!this.currentSession.token) return;
 

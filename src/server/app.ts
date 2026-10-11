@@ -7,6 +7,8 @@ import { placesRouter } from './routes/placesRoutes';
 import { vehicleRouter } from './routes/vehicleRoutes';
 import { authRouter } from './routes/authRoutes';
 import { gisRouter } from './routes/gisRoutes';
+import { tripRouter } from './routes/tripRoutes';
+import { fleetRouter } from './routes/fleetRoutes';
 
 export function createApp(): Express {
   const app = express();
@@ -45,6 +47,8 @@ export function createApp(): Express {
   app.use('/api', vehicleRouter);
   app.use('/api', authRouter);
   app.use('/api', gisRouter);
+  app.use('/api', tripRouter);
+  app.use('/api', fleetRouter);
 
   // 404 Handler for /api routes
   app.use('/api/*', (req: Request, res: Response) => {

@@ -87,3 +87,60 @@ CREATE TABLE IF NOT EXISTS road_restrictions (
 
 CREATE INDEX IF NOT EXISTS idx_restrictions_type ON road_restrictions(type);
 CREATE INDEX IF NOT EXISTS idx_restrictions_coords ON road_restrictions(lon, lat);
+
+-- 5. Active and Completed Driver Trips
+CREATE TABLE IF NOT EXISTS trips (
+    id VARCHAR(64) PRIMARY KEY,
+    user_id VARCHAR(64) REFERENCES users(id) ON DELETE SET NULL,
+    vehicle_id VARCHAR(64) REFERENCES vehicles(id) ON DELETE CASCADE,
+    origin_name VARCHAR(255) NOT NULL,
+    destination_name VARCHAR(255) NOT NULL,
+    route_id VARCHAR(64),
+    distance_km NUMERIC(7, 2) NOT NULL,
+    status VARCHAR(32) NOT NULL DEFAULT 'IN_PROGRESS', -- 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED'
+    started_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    ended_at TIMESTAMP WITH TIME ZONE
+);
+
+CREATE INDEX IF NOT EXISTS idx_trips_vehicle_id ON trips(vehicle_id);
+CREATE INDEX IF NOT EXISTS idx_trips_user_id ON trips(user_id);
+CREATE INDEX IF NOT EXISTS idx_trips_status ON trips(status);
+
+-- 6. Vehicle Telemetry History (GPS Points)
+CREATE TABLE IF NOT EXISTS vehicle_telemetry (
+    id VARCHAR(64) PRIMARY KEY,
+    trip_id VARCHAR(64) REFERENCES trips(id) ON DELETE CASCADE,
+    vehicle_id VARCHAR(64) REFERENCES vehicles(id) ON DELETE CASCADE,
+    user_id VARCHAR(64) REFERENCES users(id) ON DELETE SET NULL,
+    latitude DOUBLE PRECISION NOT NULL,
+    longitude DOUBLE PRECISION NOT NULL,
+    accuracy DOUBLE PRECISION,
+    heading DOUBLE PRECISION,
+    speed DOUBLE PRECISION,
+    timestamp TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_telemetry_trip_id ON vehicle_telemetry(trip_id);
+CREATE INDEX IF NOT EXISTS idx_telemetry_vehicle_id ON vehicle_telemetry(vehicle_id);
+CREATE INDEX IF NOT EXISTS idx_telemetry_timestamp ON vehicle_telemetry(timestamp DESC);
+
+-- 7. Vehicle Live State (Current Fleet Position & Status)
+CREATE TABLE IF NOT EXISTS vehicle_live_state (
+    vehicle_id VARCHAR(64) PRIMARY KEY REFERENCES vehicles(id) ON DELETE CASCADE,
+    user_id VARCHAR(64) REFERENCES users(id) ON DELETE SET NULL,
+    driver_name VARCHAR(255),
+    registration_number VARCHAR(32),
+    vehicle_name VARCHAR(255) NOT NULL,
+    latitude DOUBLE PRECISION NOT NULL,
+    longitude DOUBLE PRECISION NOT NULL,
+    accuracy DOUBLE PRECISION,
+    heading DOUBLE PRECISION,
+    speed DOUBLE PRECISION,
+    status VARCHAR(32) NOT NULL DEFAULT 'MOVING', -- 'MOVING' | 'STATIONARY' | 'STALE' | 'OFFLINE'
+    active_trip_id VARCHAR(64) REFERENCES trips(id) ON DELETE SET NULL,
+    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_live_state_user_id ON vehicle_live_state(user_id);
+CREATE INDEX IF NOT EXISTS idx_live_state_status ON vehicle_live_state(status);
+

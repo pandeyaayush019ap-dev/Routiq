@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { VehicleProfile, RouteCalculationResult, RoadRestriction } from '../../types';
+import { VehicleProfile, RouteCalculationResult, RoadRestriction, RouteCandidate } from '../../types';
 import { routingService } from '../../services/routing/routingService';
 import { RouteResults } from './RouteResults';
 import { useTranslation } from '../../i18n/context';
@@ -13,6 +13,8 @@ interface RoutePlannerProps {
   onSelectRoute: (routeId: string) => void;
   onSelectRestriction: (restriction: RoadRestriction) => void;
   onNavigateToVehicles: () => void;
+  onStartNavigation?: (route: RouteCandidate) => void;
+  isNavigating?: boolean;
 }
 
 export const RoutePlanner: React.FC<RoutePlannerProps> = ({
@@ -24,6 +26,8 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({
   onSelectRoute,
   onSelectRestriction,
   onNavigateToVehicles,
+  onStartNavigation,
+  isNavigating = false,
 }) => {
   const { t, isHindi } = useTranslation();
   const [origin, setOrigin] = useState<string>('Pune');
@@ -369,6 +373,8 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({
           departureTime={departureTime}
           onSelectRoute={onSelectRoute}
           onSelectRestriction={onSelectRestriction}
+          onStartNavigation={onStartNavigation}
+          isNavigating={isNavigating}
         />
       )}
     </div>

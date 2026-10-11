@@ -15,13 +15,19 @@ import { VehicleFormModal } from './components/vehicles/VehicleFormModal';
 import { AuthModal } from './components/auth/AuthModal';
 import { SubscriptionModal } from './components/subscription/SubscriptionModal';
 import { SettingsHelp } from './components/settings/SettingsHelp';
+import { NavigationHud } from './components/navigation/NavigationHud';
+import { FleetDashboard } from './components/fleet/FleetDashboard';
 import { vehicleService } from './services/vehicles/vehicleService';
 import { routingService } from './services/routing/routingService';
 import { authService } from './services/auth/authService';
+import { geolocationService, GpsPosition } from './services/navigation/geolocationService';
+import { navigationEngine, ManeuverInfo } from './services/navigation/navigationEngine';
+import { useTranslation } from './i18n/context';
 import { VehicleProfile, RouteCalculationResult, RouteCandidate, RoadRestriction } from './types';
 import { User } from './types/auth';
 
 const AppContent: React.FC = () => {
+  const { isHindi } = useTranslation();
   const [activeTab, setActiveTab] = useState<ActiveTab>('plan');
   const [vehicles, setVehicles] = useState<VehicleProfile[]>(() => vehicleService.getVehicles());
   const [activeVehicle, setActiveVehicle] = useState<VehicleProfile>(() => vehicleService.getActiveVehicle());
@@ -31,6 +37,17 @@ const AppContent: React.FC = () => {
   const [routeResult, setRouteResult] = useState<RouteCalculationResult | null>(null);
   const [selectedRouteId, setSelectedRouteId] = useState<string | undefined>(undefined);
   const [activeRestriction, setActiveRestriction] = useState<RoadRestriction | null>(null);
+
+  // Live GPS Navigation State
+  const [isNavigating, setIsNavigating] = useState<boolean>(false);
+  const [driverPosition, setDriverPosition] = useState<GpsPosition | null>(null);
+  const [activeTripId, setActiveTripId] = useState<string | null>(null);
+  const [currentManeuver, setCurrentManeuver] = useState<ManeuverInfo | null>(null);
+  const [remainingDistanceKm, setRemainingDistanceKm] = useState<number>(0);
+  const [remainingDurationMinutes, setRemainingDurationMinutes] = useState<number>(0);
+  const [isOffRoute, setIsOffRoute] = useState<boolean>(false);
+  const [offRouteDistanceMeters, setOffRouteDistanceMeters] = useState<number>(0);
+  const [navError, setNavError] = useState<string | null>(null);
 
   // Modals
   const [isAuthModalOpen, setIsAuthModalOpen] = useState<boolean>(false);
@@ -99,6 +116,92 @@ const AppContent: React.FC = () => {
     setActiveVehicle(vehicleService.getActiveVehicle());
   };
 
+  // --- Real Driver GPS Navigation Flow ---
+  const handleStartNavigation = async (route: RouteCandidate) => {
+    setNavError(null);
+
+    // 1. Validate route and destination
+    if (!route || !routeResult?.destination) {
+      alert(isHindi ? 'कृपया पहले एक वैध मार्ग खोजें और चुनें।' : 'Please find and select a valid route first.');
+      return;
+    }
+
+    // 2. Request Geolocation Permission & Initial Position
+    try {
+      const initialPos = await geolocationService.requestPosition();
+      setDriverPosition(initialPos);
+
+      // 3. Initialize trip session on server
+      let tripId: string | undefined;
+      try {
+        tripId = await navigationEngine.startTrip({
+          vehicleId: activeVehicle.id,
+          originName: routeResult.origin?.name.en || 'Origin',
+          destinationName: routeResult.destination.name.en || 'Destination',
+          routeId: route.id,
+          distanceKm: route.distanceKm,
+        });
+        setActiveTripId(tripId);
+      } catch (err) {
+        console.warn('[Trip] Offline fallback for server trip:', err);
+      }
+
+      // 4. Initial evaluation of maneuver, progress & off-route status
+      const evalState = navigationEngine.evaluateState(initialPos, route, isHindi);
+      setCurrentManeuver(evalState.currentManeuver);
+      setRemainingDistanceKm(evalState.remainingDistanceKm);
+      setRemainingDurationMinutes(evalState.remainingDurationMinutes);
+      setIsOffRoute(evalState.isOffRoute);
+      setOffRouteDistanceMeters(evalState.offRouteDistanceMeters);
+
+      // 5. Start continuous watchPosition tracking
+      geolocationService.startTracking({
+        vehicleId: activeVehicle.id,
+        tripId,
+        onPosition: (pos) => {
+          setDriverPosition(pos);
+          const nextState = navigationEngine.evaluateState(pos, route, isHindi);
+          setCurrentManeuver(nextState.currentManeuver);
+          setRemainingDistanceKm(nextState.remainingDistanceKm);
+          setRemainingDurationMinutes(nextState.remainingDurationMinutes);
+          setIsOffRoute(nextState.isOffRoute);
+          setOffRouteDistanceMeters(nextState.offRouteDistanceMeters);
+        },
+        onError: (err) => {
+          console.warn('[GPS] Watcher error:', err);
+          setNavError(err.message);
+        },
+      });
+
+      setIsNavigating(true);
+    } catch (err: any) {
+      console.error('[Navigation] Start failed:', err);
+      const msg = err.message || (isHindi ? 'जीपीएस स्थान प्राप्त करने में विफल।' : 'Failed to acquire driver GPS location.');
+      alert(msg);
+      setNavError(msg);
+    }
+  };
+
+  const handleStopNavigation = async () => {
+    geolocationService.stopTracking();
+    if (activeTripId) {
+      await navigationEngine.endTrip(activeTripId);
+      setActiveTripId(null);
+    }
+    setIsNavigating(false);
+    setDriverPosition(null);
+    setCurrentManeuver(null);
+    setIsOffRoute(false);
+    setNavError(null);
+  };
+
+  // Clean up GPS watchers on component unmount
+  useEffect(() => {
+    return () => {
+      geolocationService.stopTracking();
+    };
+  }, []);
+
   const selectedRoute: RouteCandidate | undefined = routeResult?.routes.find(
     (r) => r.id === selectedRouteId
   );
@@ -148,11 +251,13 @@ const AppContent: React.FC = () => {
                   setEditingVehicle(null);
                   setIsVehicleModalOpen(true);
                 }}
+                onStartNavigation={handleStartNavigation}
+                isNavigating={isNavigating}
               />
             </div>
 
             {/* Right Column: Genuine MapLibre Interactive Map */}
-            <div className="lg:col-span-7 xl:col-span-8 order-1 lg:order-2 h-[420px] sm:h-[480px] lg:h-[calc(100vh-160px)] lg:sticky lg:top-24">
+            <div className="lg:col-span-7 xl:col-span-8 order-1 lg:order-2 h-[460px] sm:h-[520px] lg:h-[calc(100vh-160px)] lg:sticky lg:top-24 relative">
               <InteractiveMap
                 origin={routeResult?.origin}
                 destination={routeResult?.destination}
@@ -160,8 +265,32 @@ const AppContent: React.FC = () => {
                 alternativeRoutes={alternativeRoutes}
                 onSelectRoute={setSelectedRouteId}
                 onSelectRestriction={setActiveRestriction}
+                driverLocation={driverPosition}
+                isNavigating={isNavigating}
               />
+
+              {isNavigating && (
+                <NavigationHud
+                  currentManeuver={currentManeuver}
+                  currentPosition={driverPosition}
+                  remainingDistanceKm={remainingDistanceKm}
+                  remainingDurationMinutes={remainingDurationMinutes}
+                  isOffRoute={isOffRoute}
+                  offRouteDistanceMeters={offRouteDistanceMeters}
+                  onStopNavigation={handleStopNavigation}
+                  onRecalculate={() => {
+                    if (selectedRoute) handleStartNavigation(selectedRoute);
+                  }}
+                  routeName={selectedRoute ? { en: selectedRoute.name.en, hi: selectedRoute.name.hi } : undefined}
+                />
+              )}
             </div>
+          </div>
+        )}
+
+        {activeTab === 'fleet' && (
+          <div className="py-1">
+            <FleetDashboard />
           </div>
         )}
 
