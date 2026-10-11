@@ -40,3 +40,7 @@
    - 27 automated tests passing across 8 test suites in Vitest.
    - Zero TypeScript compile errors (`tsc --noEmit`).
    - Clean Vite production build (`dist`).
+10. **Production Deployment (Vercel):**
+   - Live Production Application: `https://routiq-zeta.vercel.app`
+   - Live API Health Endpoint: `https://routiq-zeta.vercel.app/api/health`
+   - Serverless Express bundle: `api/index.js`
