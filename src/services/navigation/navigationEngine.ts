@@ -49,14 +49,24 @@ export class NavigationEngine {
     // 1. Off-Route Check using Turf point-to-line distance
     const distToLineKm = turf.pointToLineDistance(pt, line, { units: 'kilometers' });
     const offRouteDistanceMeters = Math.round(distToLineKm * 1000);
-    // Flag off-route if driver is more than 85 meters away from route polyline
+    // Flag off-route if driver is between 85m and 5000m away from the route polyline
     const isOffRoute = offRouteDistanceMeters > 85;
 
     // 2. Distance from current point to destination (last coordinate)
     const destCoord = coords[coords.length - 1];
     const destPt = turf.point(destCoord);
-    const distToDestKm = turf.distance(pt, destPt, { units: 'kilometers' });
-    const remainingDistanceKm = Math.max(0, Math.round(distToDestKm * 10) / 10);
+    const originCoord = coords[0];
+    const originPt = turf.point(originCoord);
+    const distToOriginKm = turf.distance(pt, originPt, { units: 'kilometers' });
+
+    let remainingDistanceKm: number;
+    if (distToLineKm > 5.0) {
+      // Driver is far from the route corridor (e.g. testing remotely or approaching route)
+      remainingDistanceKm = Math.round((route.distanceKm + distToOriginKm) * 10) / 10;
+    } else {
+      const distToDestKm = turf.distance(pt, destPt, { units: 'kilometers' });
+      remainingDistanceKm = Math.max(0, Math.round(distToDestKm * 10) / 10);
+    }
 
     // Calculate remaining duration based on average truck speed (50 km/h) or current speed
     const effectiveSpeed = position.speedKmh > 15 ? position.speedKmh : 50;
@@ -69,14 +79,22 @@ export class NavigationEngine {
 
     // Estimate active step index proportionally by progress along route
     const totalDistance = route.distanceKm || 1;
-    const progressFraction = Math.min(1, Math.max(0, 1 - remainingDistanceKm / totalDistance));
-    const activeStepIndex = Math.min(stepCount - 1, Math.floor(progressFraction * stepCount));
+    let activeStepIndex = 0;
+    if (distToLineKm <= 5.0) {
+      const progressFraction = Math.min(1, Math.max(0, 1 - remainingDistanceKm / totalDistance));
+      activeStepIndex = Math.min(stepCount - 1, Math.floor(progressFraction * stepCount));
+    }
 
-    const instructionEn = stepsEn[activeStepIndex] || 'Continue on route';
-    const instructionHi = stepsHi[activeStepIndex] || 'मार्ग पर आगे बढ़ते रहें';
+    let instructionEn = stepsEn[activeStepIndex] || 'Continue on route';
+    let instructionHi = stepsHi[activeStepIndex] || 'मार्ग पर आगे बढ़ते रहें';
+
+    if (distToLineKm > 5.0) {
+      instructionEn = `Head towards route start (${distToOriginKm.toFixed(1)} km away)`;
+      instructionHi = `मार्ग के प्रारंभ बिंदु की ओर बढ़ें (${distToOriginKm.toFixed(1)} किमी दूर)`;
+    }
 
     // Maneuver icon heuristic
-    const icon = this.resolveManeuverIcon(instructionEn, remainingDistanceKm);
+    const icon = distToLineKm > 5.0 ? '⬆' : this.resolveManeuverIcon(instructionEn, remainingDistanceKm);
 
     // Distance to next step
     const distanceToManeuverMeters = Math.round((remainingDistanceKm / Math.max(1, stepCount - activeStepIndex)) * 1000);

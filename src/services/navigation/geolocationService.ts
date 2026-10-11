@@ -55,8 +55,41 @@ class GeolocationService {
     }
 
     return new Promise<GpsPosition>((resolve, reject) => {
+      let resolved = false;
+
+      const tryFallback = () => {
+        navigator.geolocation.getCurrentPosition(
+          (pos) => {
+            if (resolved) return;
+            resolved = true;
+            const speedKmh = pos.coords.speed ? Math.max(0, pos.coords.speed * 3.6) : 0;
+            resolve({
+              latitude: pos.coords.latitude,
+              longitude: pos.coords.longitude,
+              accuracy: pos.coords.accuracy,
+              heading: pos.coords.heading,
+              speed: pos.coords.speed,
+              speedKmh,
+              timestamp: pos.timestamp,
+            });
+          },
+          (err) => {
+            if (resolved) return;
+            resolved = true;
+            reject(this.mapError(err));
+          },
+          {
+            enableHighAccuracy: false,
+            timeout: 5000,
+            maximumAge: 60000,
+          }
+        );
+      };
+
       navigator.geolocation.getCurrentPosition(
         (pos) => {
+          if (resolved) return;
+          resolved = true;
           const speedKmh = pos.coords.speed ? Math.max(0, pos.coords.speed * 3.6) : 0;
           resolve({
             latitude: pos.coords.latitude,
@@ -69,12 +102,19 @@ class GeolocationService {
           });
         },
         (err) => {
-          reject(this.mapError(err));
+          // If high accuracy times out or satellite signal unavailable, try low accuracy before rejecting
+          if (err.code === 3 || err.code === 2) {
+            tryFallback();
+          } else {
+            if (resolved) return;
+            resolved = true;
+            reject(this.mapError(err));
+          }
         },
         {
           enableHighAccuracy: true,
-          timeout: 12000,
-          maximumAge: 1000,
+          timeout: 6000,
+          maximumAge: 30000,
         }
       );
     });

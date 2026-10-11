@@ -9,12 +9,14 @@ interface RoutePlannerProps {
   activeVehicle: VehicleProfile;
   onSelectVehicle: (vehicleId: string) => void;
   onRoutesCalculated: (result: RouteCalculationResult) => void;
+  routeResult?: RouteCalculationResult | null;
   selectedRouteId?: string;
   onSelectRoute: (routeId: string) => void;
   onSelectRestriction: (restriction: RoadRestriction) => void;
   onNavigateToVehicles: () => void;
   onStartNavigation?: (route: RouteCandidate) => void;
   isNavigating?: boolean;
+  isStartingNavigation?: boolean;
 }
 
 export const RoutePlanner: React.FC<RoutePlannerProps> = ({
@@ -22,12 +24,14 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({
   activeVehicle,
   onSelectVehicle,
   onRoutesCalculated,
+  routeResult,
   selectedRouteId,
   onSelectRoute,
   onSelectRestriction,
   onNavigateToVehicles,
   onStartNavigation,
   isNavigating = false,
+  isStartingNavigation = false,
 }) => {
   const { t, isHindi } = useTranslation();
   const [origin, setOrigin] = useState<string>('Pune');
@@ -366,15 +370,16 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({
       </form>
 
       {/* Results View */}
-      {lastResult && (
+      {(routeResult || lastResult) && (
         <RouteResults
-          routes={lastResult.routes}
+          routes={(routeResult || lastResult)!.routes}
           selectedRouteId={selectedRouteId}
           departureTime={departureTime}
           onSelectRoute={onSelectRoute}
           onSelectRestriction={onSelectRestriction}
           onStartNavigation={onStartNavigation}
           isNavigating={isNavigating}
+          isStartingNavigation={isStartingNavigation}
         />
       )}
     </div>

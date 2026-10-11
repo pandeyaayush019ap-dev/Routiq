@@ -40,6 +40,7 @@ const AppContent: React.FC = () => {
 
   // Live GPS Navigation State
   const [isNavigating, setIsNavigating] = useState<boolean>(false);
+  const [isStartingNavigation, setIsStartingNavigation] = useState<boolean>(false);
   const [driverPosition, setDriverPosition] = useState<GpsPosition | null>(null);
   const [activeTripId, setActiveTripId] = useState<string | null>(null);
   const [currentManeuver, setCurrentManeuver] = useState<ManeuverInfo | null>(null);
@@ -48,6 +49,7 @@ const AppContent: React.FC = () => {
   const [isOffRoute, setIsOffRoute] = useState<boolean>(false);
   const [offRouteDistanceMeters, setOffRouteDistanceMeters] = useState<number>(0);
   const [navError, setNavError] = useState<string | null>(null);
+  const [gpsNotice, setGpsNotice] = useState<string | null>(null);
 
   // Modals
   const [isAuthModalOpen, setIsAuthModalOpen] = useState<boolean>(false);
@@ -118,17 +120,45 @@ const AppContent: React.FC = () => {
 
   // --- Real Driver GPS Navigation Flow ---
   const handleStartNavigation = async (route: RouteCandidate) => {
+    setIsStartingNavigation(true);
     setNavError(null);
+    setGpsNotice(null);
 
     // 1. Validate route and destination
     if (!route || !routeResult?.destination) {
+      setIsStartingNavigation(false);
       alert(isHindi ? 'कृपया पहले एक वैध मार्ग खोजें और चुनें।' : 'Please find and select a valid route first.');
       return;
     }
 
-    // 2. Request Geolocation Permission & Initial Position
     try {
-      const initialPos = await geolocationService.requestPosition();
+      // 2. Request Geolocation Permission & Initial Position
+      let initialPos: GpsPosition;
+      let isGpsLocked = false;
+
+      try {
+        initialPos = await geolocationService.requestPosition();
+        isGpsLocked = true;
+      } catch (geoErr: any) {
+        console.warn('[Navigation] Real GPS unavailable, using route origin fallback:', geoErr);
+        // Fallback to route origin coordinates:
+        const firstCoord = route.geometry.coordinates[0];
+        initialPos = {
+          latitude: firstCoord[1],
+          longitude: firstCoord[0],
+          accuracy: 50,
+          heading: 0,
+          speed: 0,
+          speedKmh: 0,
+          timestamp: Date.now(),
+        };
+        setGpsNotice(
+          isHindi
+            ? '⚠️ जीपीएस सिग्नल प्रतीक्षारत (आरंभिक बिंदु से नेविगेशन सक्रिय)'
+            : '⚠️ GPS signal pending lock (Navigating from route origin)'
+        );
+      }
+
       setDriverPosition(initialPos);
 
       // 3. Initialize trip session on server
@@ -159,6 +189,7 @@ const AppContent: React.FC = () => {
         vehicleId: activeVehicle.id,
         tripId,
         onPosition: (pos) => {
+          setGpsNotice(null);
           setDriverPosition(pos);
           const nextState = navigationEngine.evaluateState(pos, route, isHindi);
           setCurrentManeuver(nextState.currentManeuver);
@@ -169,16 +200,24 @@ const AppContent: React.FC = () => {
         },
         onError: (err) => {
           console.warn('[GPS] Watcher error:', err);
-          setNavError(err.message);
+          if (!isGpsLocked) {
+            setGpsNotice(
+              isHindi
+                ? '⚠️ जीपीएस अनुपलब्ध (अनुमति अस्वीकृत या टाइमआउट)। प्रारंभिक बिंदु से नेविगेशन जारी है।'
+                : '⚠️ GPS unavailable (Permission denied/timeout). Navigating from route origin.'
+            );
+          }
         },
       });
 
       setIsNavigating(true);
     } catch (err: any) {
       console.error('[Navigation] Start failed:', err);
-      const msg = err.message || (isHindi ? 'जीपीएस स्थान प्राप्त करने में विफल।' : 'Failed to acquire driver GPS location.');
+      const msg = err.message || (isHindi ? 'नेविगेशन शुरू करने में विफल।' : 'Failed to start navigation.');
       alert(msg);
       setNavError(msg);
+    } finally {
+      setIsStartingNavigation(false);
     }
   };
 
@@ -189,10 +228,12 @@ const AppContent: React.FC = () => {
       setActiveTripId(null);
     }
     setIsNavigating(false);
+    setIsStartingNavigation(false);
     setDriverPosition(null);
     setCurrentManeuver(null);
     setIsOffRoute(false);
     setNavError(null);
+    setGpsNotice(null);
   };
 
   // Clean up GPS watchers on component unmount
@@ -244,6 +285,7 @@ const AppContent: React.FC = () => {
                   setRouteResult(res);
                   setSelectedRouteId(res.recommendedRouteId || res.routes[0]?.id);
                 }}
+                routeResult={routeResult}
                 selectedRouteId={selectedRouteId}
                 onSelectRoute={setSelectedRouteId}
                 onSelectRestriction={setActiveRestriction}
@@ -253,6 +295,7 @@ const AppContent: React.FC = () => {
                 }}
                 onStartNavigation={handleStartNavigation}
                 isNavigating={isNavigating}
+                isStartingNavigation={isStartingNavigation}
               />
             </div>
 
@@ -282,6 +325,7 @@ const AppContent: React.FC = () => {
                     if (selectedRoute) handleStartNavigation(selectedRoute);
                   }}
                   routeName={selectedRoute ? { en: selectedRoute.name.en, hi: selectedRoute.name.hi } : undefined}
+                  gpsNotice={gpsNotice}
                 />
               )}
             </div>

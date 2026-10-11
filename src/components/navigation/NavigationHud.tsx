@@ -13,6 +13,7 @@ interface NavigationHudProps {
   onStopNavigation: () => void;
   onRecalculate?: () => void;
   routeName?: { en: string; hi: string };
+  gpsNotice?: string | null;
 }
 
 export const NavigationHud: React.FC<NavigationHudProps> = ({
@@ -25,6 +26,7 @@ export const NavigationHud: React.FC<NavigationHudProps> = ({
   onStopNavigation,
   onRecalculate,
   routeName,
+  gpsNotice,
 }) => {
   const { isHindi, t } = useTranslation();
 
@@ -43,6 +45,14 @@ export const NavigationHud: React.FC<NavigationHudProps> = ({
     <div className="absolute inset-x-0 top-0 bottom-0 pointer-events-none flex flex-col justify-between p-3 sm:p-5 z-30">
       {/* Top Banner: Next Turn Maneuver */}
       <div className="pointer-events-auto max-w-xl w-full mx-auto space-y-2">
+        {/* GPS Fallback Notice */}
+        {gpsNotice && (
+          <div className="bg-slate-900/90 text-amber-200 rounded-xl px-3.5 py-2 text-xs font-semibold border border-amber-500/50 shadow-lg flex items-center gap-2">
+            <span>ℹ️</span>
+            <span>{gpsNotice}</span>
+          </div>
+        )}
+
         {/* Off-Route Alert Banner */}
         {isOffRoute && (
           <div className="bg-amber-600 text-white rounded-2xl p-3 shadow-2xl flex items-center justify-between gap-3 animate-pulse border-2 border-amber-300">

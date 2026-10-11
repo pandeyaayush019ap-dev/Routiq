@@ -11,6 +11,7 @@ interface RouteResultsProps {
   onSelectRestriction: (restriction: RoadRestriction) => void;
   onStartNavigation?: (route: RouteCandidate) => void;
   isNavigating?: boolean;
+  isStartingNavigation?: boolean;
 }
 
 export const RouteResults: React.FC<RouteResultsProps> = ({
@@ -21,6 +22,7 @@ export const RouteResults: React.FC<RouteResultsProps> = ({
   onSelectRestriction,
   onStartNavigation,
   isNavigating = false,
+  isStartingNavigation = false,
 }) => {
   const { t, isHindi } = useTranslation();
   const [expandedTurns, setExpandedTurns] = useState<Record<string, boolean>>({});
@@ -194,22 +196,28 @@ export const RouteResults: React.FC<RouteResultsProps> = ({
               {isSelected && onStartNavigation && (
                 <button
                   type="button"
-                  disabled={isBlocked}
+                  disabled={isBlocked || isStartingNavigation}
                   onClick={() => onStartNavigation(route)}
                   className={`w-full py-3 rounded-xl font-black text-sm transition-all flex items-center justify-center gap-2 shadow-md cursor-pointer ${
-                    isBlocked
+                    isBlocked || isStartingNavigation
                       ? 'bg-slate-200 text-slate-400 cursor-not-allowed'
                       : isNavigating
                       ? 'bg-emerald-600 text-white animate-pulse'
                       : 'bg-emerald-600 hover:bg-emerald-700 active:scale-[0.98] text-white shadow-emerald-600/20'
                   }`}
                 >
-                  <span className="text-base">{isNavigating ? '📍' : '🧭'}</span>
+                  <span className="text-base">
+                    {isStartingNavigation ? '⏳' : isNavigating ? '📍' : '🧭'}
+                  </span>
                   <span>
                     {isBlocked
                       ? isHindi
                         ? 'प्रतिबंधित मार्ग (नेविगेशन अनुपलब्ध)'
                         : 'Blocked Route (Navigation Unavailable)'
+                      : isStartingNavigation
+                      ? isHindi
+                        ? 'जीपीएस खोजा जा रहा है...'
+                        : 'Acquiring GPS...'
                       : isNavigating
                       ? isHindi
                         ? 'नेविगेशन सक्रिय है'
