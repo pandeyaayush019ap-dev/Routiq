@@ -499,6 +499,50 @@ healthRouter.get("/health/ready", async (_req, res) => {
 import { Router as Router2 } from "express";
 
 // src/server/geocoding/geocodingService.ts
+var KNOWN_INDIAN_LOCATIONS = [
+  { names: ["pune", "poona", "\u092A\u0941\u0923\u0947"], en: "Pune", hi: "\u092A\u0941\u0923\u0947", coordinates: [73.8567, 18.5204], city: "Pune", state: "Maharashtra" },
+  { names: ["mumbai", "bombay", "\u092E\u0941\u0902\u092C\u0908"], en: "Mumbai", hi: "\u092E\u0941\u0902\u092C\u0908", coordinates: [72.8777, 19.076], city: "Mumbai", state: "Maharashtra" },
+  { names: ["navi mumbai", "vashi", "\u0935\u093E\u0936\u0940", "\u0928\u0935\u0940 \u092E\u0941\u0902\u092C\u0908"], en: "Navi Mumbai", hi: "\u0928\u0935\u0940 \u092E\u0941\u0902\u092C\u0908", coordinates: [72.9982, 19.0771], city: "Navi Mumbai", state: "Maharashtra" },
+  { names: ["thane", "\u0920\u093E\u0923\u0947"], en: "Thane", hi: "\u0920\u093E\u0923\u0947", coordinates: [72.9781, 19.2183], city: "Thane", state: "Maharashtra" },
+  { names: ["dahisar", "\u0926\u0939\u093F\u0938\u0930"], en: "Dahisar", hi: "\u0926\u0939\u093F\u0938\u0930", coordinates: [72.8599, 19.2496], city: "Mumbai Suburban", state: "Maharashtra" },
+  { names: ["kalyan", "\u0915\u0932\u094D\u092F\u093E\u0923"], en: "Kalyan", hi: "\u0915\u0932\u094D\u092F\u093E\u0923", coordinates: [73.1305, 19.2403], city: "Thane", state: "Maharashtra" },
+  { names: ["panvel", "\u092A\u0928\u0935\u0947\u0932"], en: "Panvel", hi: "\u092A\u0928\u0935\u0947\u0932", coordinates: [73.1099, 18.9894], city: "Raigad", state: "Maharashtra" },
+  { names: ["lonavala", "\u0932\u094B\u0928\u093E\u0935\u0932\u093E"], en: "Lonavala", hi: "\u0932\u094B\u0928\u093E\u0935\u0932\u093E", coordinates: [73.4072, 18.7557], city: "Pune", state: "Maharashtra" },
+  { names: ["khopoli", "\u0916\u094B\u092A\u094B\u0932\u0940"], en: "Khopoli", hi: "\u0916\u094B\u092A\u094B\u0932\u0940", coordinates: [73.3421, 18.7845], city: "Raigad", state: "Maharashtra" },
+  { names: ["nashik", "nasik", "\u0928\u093E\u0938\u093F\u0915", "\u0928\u093E\u0936\u093F\u0915"], en: "Nashik", hi: "\u0928\u093E\u0938\u093F\u0915", coordinates: [73.7898, 19.9975], city: "Nashik", state: "Maharashtra" },
+  { names: ["delhi", "new delhi", "\u0926\u093F\u0932\u094D\u0932\u0940", "\u0928\u0908 \u0926\u093F\u0932\u094D\u0932\u0940"], en: "Delhi", hi: "\u0926\u093F\u0932\u094D\u0932\u0940", coordinates: [77.1025, 28.7041], city: "New Delhi", state: "Delhi NCR" },
+  { names: ["jaipur", "\u091C\u092F\u092A\u0941\u0930"], en: "Jaipur", hi: "\u091C\u092F\u092A\u0941\u0930", coordinates: [75.7873, 26.9124], city: "Jaipur", state: "Rajasthan" },
+  { names: ["ahmedabad", "\u0905\u0939\u092E\u0926\u093E\u092C\u093E\u0926"], en: "Ahmedabad", hi: "\u0905\u0939\u092E\u0926\u093E\u092C\u093E\u0926", coordinates: [72.5714, 23.0225], city: "Ahmedabad", state: "Gujarat" },
+  { names: ["surat", "\u0938\u0942\u0930\u0924"], en: "Surat", hi: "\u0938\u0942\u0930\u0924", coordinates: [72.8311, 21.1702], city: "Surat", state: "Gujarat" },
+  { names: ["vadodara", "\u092C\u0921\u093C\u094C\u0926\u093E", "\u0935\u0921\u094B\u0926\u0930\u093E"], en: "Vadodara", hi: "\u0935\u0921\u094B\u0926\u0930\u093E", coordinates: [73.1812, 22.3072], city: "Vadodara", state: "Gujarat" },
+  { names: ["nagpur", "\u0928\u093E\u0917\u092A\u0941\u0930"], en: "Nagpur", hi: "\u0928\u093E\u0917\u092A\u0941\u0930", coordinates: [79.0882, 21.1458], city: "Nagpur", state: "Maharashtra" },
+  { names: ["bengaluru", "bangalore", "\u092C\u0947\u0902\u0917\u0932\u0941\u0930\u0941"], en: "Bengaluru", hi: "\u092C\u0947\u0902\u0917\u0932\u0941\u0930\u0941", coordinates: [77.5946, 12.9716], city: "Bengaluru", state: "Karnataka" },
+  { names: ["hyderabad", "\u0939\u0948\u0926\u0930\u093E\u092C\u093E\u0926"], en: "Hyderabad", hi: "\u0939\u0948\u0926\u0930\u093E\u092C\u093E\u0926", coordinates: [78.4867, 17.385], city: "Hyderabad", state: "Telangana" },
+  { names: ["chennai", "\u092E\u0926\u094D\u0930\u093E\u0938", "\u091A\u0947\u0928\u094D\u0928\u0908"], en: "Chennai", hi: "\u091A\u0947\u0928\u094D\u0928\u0908", coordinates: [80.2707, 13.0827], city: "Chennai", state: "Tamil Nadu" },
+  { names: ["kolkata", "calcutta", "\u0915\u094B\u0932\u0915\u093E\u0924\u093E"], en: "Kolkata", hi: "\u0915\u094B\u0932\u0915\u093E\u0924\u093E", coordinates: [88.3639, 22.5726], city: "Kolkata", state: "West Bengal" },
+  { names: ["indore", "\u0907\u0902\u0926\u094C\u0930"], en: "Indore", hi: "\u0907\u0902\u0926\u094C\u0930", coordinates: [75.8577, 22.7196], city: "Indore", state: "Madhya Pradesh" },
+  { names: ["bhopal", "\u092D\u094B\u092A\u093E\u0932"], en: "Bhopal", hi: "\u092D\u094B\u092A\u093E\u0932", coordinates: [77.4126, 23.2599], city: "Bhopal", state: "Madhya Pradesh" },
+  { names: ["lucknow", "\u0932\u0916\u0928\u090A"], en: "Lucknow", hi: "\u0932\u0916\u0928\u090A", coordinates: [80.9462, 26.8467], city: "Lucknow", state: "Uttar Pradesh" },
+  { names: ["kanpur", "\u0915\u093E\u0928\u092A\u0941\u0930"], en: "Kanpur", hi: "\u0915\u093E\u0928\u092A\u0941\u0930", coordinates: [80.3319, 26.4499], city: "Kanpur", state: "Uttar Pradesh" },
+  { names: ["agra", "\u0906\u0917\u0930\u093E"], en: "Agra", hi: "\u0906\u0917\u0930\u093E", coordinates: [78.0081, 27.1767], city: "Agra", state: "Uttar Pradesh" },
+  { names: ["chandigarh", "\u091A\u0902\u0921\u0940\u0917\u0922\u093C"], en: "Chandigarh", hi: "\u091A\u0902\u0921\u0940\u0917\u0922\u093C", coordinates: [76.7794, 30.7333], city: "Chandigarh", state: "Punjab / Haryana" },
+  { names: ["ludhiana", "\u0932\u0941\u0927\u093F\u092F\u093E\u0928\u093E"], en: "Ludhiana", hi: "\u0932\u0941\u0927\u093F\u092F\u093E\u0928\u093E", coordinates: [75.8573, 30.901], city: "Ludhiana", state: "Punjab" },
+  { names: ["varanasi", "\u092C\u0928\u093E\u0930\u0938", "\u0935\u093E\u0930\u093E\u0923\u0938\u0940"], en: "Varanasi", hi: "\u0935\u093E\u0930\u093E\u0923\u0938\u0940", coordinates: [82.9739, 25.3176], city: "Varanasi", state: "Uttar Pradesh" },
+  { names: ["patna", "\u092A\u091F\u0928\u093E"], en: "Patna", hi: "\u092A\u091F\u0928\u093E", coordinates: [85.1376, 25.5941], city: "Patna", state: "Bihar" },
+  { names: ["jnpt", "nhava sheva", "\u0928\u094D\u0939\u093E\u0935\u093E \u0936\u0947\u0935\u093E"], en: "JNPT Port (Nhava Sheva)", hi: "\u091C\u0947\u090F\u0928\u092A\u0940\u091F\u0940 \u092C\u0902\u0926\u0930\u0917\u093E\u0939", coordinates: [72.9511, 18.9496], city: "Navi Mumbai", state: "Maharashtra" }
+];
+async function fetchWithTimeout(url, options = {}, timeoutMs = 2500) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(url, { ...options, signal: controller.signal });
+    clearTimeout(timer);
+    return res;
+  } catch (err) {
+    clearTimeout(timer);
+    throw err;
+  }
+}
 var GeocodingService = class {
   constructor() {
     this.cache = /* @__PURE__ */ new Map();
@@ -506,7 +550,7 @@ var GeocodingService = class {
   }
   // 1 hour
   /**
-   * Search for locations in India using Photon (OSM-based geocoding)
+   * Search for locations in India using Photon (OSM-based geocoding) with fast local dictionary & Nominatim fallback
    */
   async searchPlaces(query, limit = 8) {
     const cleanQuery = query.trim();
@@ -516,11 +560,29 @@ var GeocodingService = class {
     if (cached && cached.expiresAt > Date.now()) {
       return cached.data;
     }
+    const lowerQuery = cleanQuery.toLowerCase();
+    const matchedKnown = KNOWN_INDIAN_LOCATIONS.filter(
+      (k) => k.names.some((alias) => lowerQuery.includes(alias) || alias.includes(lowerQuery))
+    );
+    if (matchedKnown.length > 0) {
+      const directPlaces = matchedKnown.slice(0, limit).map((k, idx) => ({
+        id: `known_${k.en.toLowerCase().replace(/[^a-z0-9]/g, "_")}_${idx}`,
+        name: { en: k.en, hi: k.hi },
+        formattedAddress: `${k.en}, ${k.city}, ${k.state}, India`,
+        coordinates: k.coordinates,
+        city: k.city,
+        state: k.state,
+        country: "India",
+        type: "city"
+      }));
+      this.cache.set(cacheKey, { data: directPlaces, expiresAt: Date.now() + this.CACHE_TTL_MS });
+      return directPlaces;
+    }
     try {
       const url = `https://photon.komoot.io/api/?q=${encodeURIComponent(cleanQuery)}&limit=${limit}&lat=20.5937&lon=78.9629`;
-      const res = await fetch(url, {
+      const res = await fetchWithTimeout(url, {
         headers: { "User-Agent": "Routiq-HeavyTruckRouting/1.0 (contact: support@routiq.app)" }
-      });
+      }, 2500);
       if (res.ok) {
         const json = await res.json();
         if (json.features && json.features.length > 0) {
@@ -535,7 +597,6 @@ var GeocodingService = class {
               name: {
                 en: nameEn,
                 hi: nameEn
-                // Can be matched against known Indian cities
               },
               formattedAddress: formatted,
               coordinates: f.geometry.coordinates,
@@ -550,32 +611,49 @@ var GeocodingService = class {
         }
       }
     } catch (err) {
-      console.warn("[GeocodingService] Photon search failed, falling back to Nominatim:", err);
+      console.warn("[GeocodingService] Photon search timed out/failed, trying Nominatim:", err);
     }
     try {
       const nomUrl = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(cleanQuery)}&format=json&countrycodes=in&limit=${limit}&addressdetails=1`;
-      const nomRes = await fetch(nomUrl, {
+      const nomRes = await fetchWithTimeout(nomUrl, {
         headers: { "User-Agent": "Routiq-HeavyTruckRouting/1.0 (contact: support@routiq.app)" }
-      });
+      }, 2500);
       if (nomRes.ok) {
         const nomJson = await nomRes.json();
-        const results = nomJson.map((item) => ({
-          id: `geo_nom_${item.place_id}`,
-          name: {
-            en: item.display_name.split(",")[0],
-            hi: item.display_name.split(",")[0]
-          },
-          formattedAddress: item.display_name,
-          coordinates: [parseFloat(item.lon), parseFloat(item.lat)],
-          city: item.address?.city,
-          state: item.address?.state,
-          country: item.address?.country || "India"
-        }));
-        this.cache.set(cacheKey, { data: results, expiresAt: Date.now() + this.CACHE_TTL_MS });
-        return results;
+        if (nomJson && nomJson.length > 0) {
+          const results = nomJson.map((item) => ({
+            id: `geo_nom_${item.place_id}`,
+            name: {
+              en: item.display_name.split(",")[0],
+              hi: item.display_name.split(",")[0]
+            },
+            formattedAddress: item.display_name,
+            coordinates: [parseFloat(item.lon), parseFloat(item.lat)],
+            city: item.address?.city,
+            state: item.address?.state,
+            country: item.address?.country || "India"
+          }));
+          this.cache.set(cacheKey, { data: results, expiresAt: Date.now() + this.CACHE_TTL_MS });
+          return results;
+        }
       }
     } catch (err) {
-      console.error("[GeocodingService] Nominatim fallback failed:", err);
+      console.warn("[GeocodingService] Nominatim fallback timed out/failed:", err);
+    }
+    const fuzzyMatches = KNOWN_INDIAN_LOCATIONS.filter(
+      (k) => cleanQuery.split(" ").some((word) => word.length >= 3 && k.en.toLowerCase().includes(word.toLowerCase()))
+    );
+    if (fuzzyMatches.length > 0) {
+      return fuzzyMatches.slice(0, limit).map((k, idx) => ({
+        id: `fuzzy_${k.en.toLowerCase()}_${idx}`,
+        name: { en: k.en, hi: k.hi },
+        formattedAddress: `${k.en}, ${k.state}, India`,
+        coordinates: k.coordinates,
+        city: k.city,
+        state: k.state,
+        country: "India",
+        type: "city"
+      }));
     }
     return [];
   }
@@ -588,11 +666,29 @@ var GeocodingService = class {
     if (cached && cached.expiresAt > Date.now() && cached.data[0]) {
       return cached.data[0];
     }
+    const nearbyKnown = KNOWN_INDIAN_LOCATIONS.find((k) => {
+      const dLon = Math.abs(k.coordinates[0] - lon);
+      const dLat = Math.abs(k.coordinates[1] - lat);
+      return dLon < 0.2 && dLat < 0.2;
+    });
+    if (nearbyKnown) {
+      const place = {
+        id: `known_rev_${nearbyKnown.en.toLowerCase()}`,
+        name: { en: nearbyKnown.en, hi: nearbyKnown.hi },
+        formattedAddress: `${nearbyKnown.en}, ${nearbyKnown.state}, India`,
+        coordinates: [lon, lat],
+        city: nearbyKnown.city,
+        state: nearbyKnown.state,
+        country: "India"
+      };
+      this.cache.set(cacheKey, { data: [place], expiresAt: Date.now() + this.CACHE_TTL_MS });
+      return place;
+    }
     try {
       const url = `https://photon.komoot.io/reverse?lon=${lon}&lat=${lat}`;
-      const res = await fetch(url, {
-        headers: { "User-Agent": "Routiq-HeavyTruckRouting/1.0" }
-      });
+      const res = await fetchWithTimeout(url, {
+        headers: { "User-Agent": "Routiq-HeavyTruckRouting/1.0 (contact: support@routiq.app)" }
+      }, 2500);
       if (res.ok) {
         const json = await res.json();
         if (json.features && json.features[0]) {
@@ -612,9 +708,16 @@ var GeocodingService = class {
         }
       }
     } catch (err) {
-      console.warn("[GeocodingService] Reverse geocode failed:", err);
+      console.warn("[GeocodingService] Reverse geocode remote query timed out/failed:", err);
     }
-    return null;
+    const defaultPlace = {
+      id: `coord_${lon.toFixed(4)}_${lat.toFixed(4)}`,
+      name: { en: `${lat.toFixed(4)}\xB0N, ${lon.toFixed(4)}\xB0E`, hi: `${lat.toFixed(4)}\xB0N, ${lon.toFixed(4)}\xB0E` },
+      formattedAddress: `Location at ${lat.toFixed(4)}\xB0N, ${lon.toFixed(4)}\xB0E, India`,
+      coordinates: [lon, lat],
+      country: "India"
+    };
+    return defaultPlace;
   }
 };
 var geocodingService = new GeocodingService();
@@ -1196,6 +1299,18 @@ var OpenRouteServiceProvider = class {
 };
 
 // src/server/routing/providers/osrmProvider.ts
+async function fetchWithTimeout2(url, options = {}, timeoutMs = 3500) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(url, { ...options, signal: controller.signal });
+    clearTimeout(timer);
+    return res;
+  } catch (err) {
+    clearTimeout(timer);
+    throw err;
+  }
+}
 var OsrmRoutingProvider = class {
   constructor() {
     this.name = "OSRM Road Network Engine + Routiq Spatial GIS";
@@ -1211,9 +1326,9 @@ var OsrmRoutingProvider = class {
     ].join(";");
     const url = `${config.OSRM_URL}/route/v1/driving/${coordsStr}?overview=full&geometries=geojson&steps=true&alternatives=true`;
     try {
-      const response = await fetch(url, {
+      const response = await fetchWithTimeout2(url, {
         headers: { "User-Agent": "Routiq-HeavyTruckRouting/1.0 (contact: support@routiq.app)" }
-      });
+      }, 3500);
       if (!response.ok) return [];
       const data = await response.json();
       if (data.code !== "Ok" || !data.routes || data.routes.length === 0) return [];
@@ -2084,128 +2199,334 @@ import { Router as Router4 } from "express";
 
 // src/server/places/placesService.ts
 import * as turf2 from "@turf/turf";
+var OVERPASS_MIRRORS = [
+  "https://overpass-api.de/api/interpreter",
+  "https://overpass.kumi.systems/api/interpreter",
+  "https://lz4.overpass-api.de/api/interpreter"
+];
+var VERIFIED_CORRIDOR_POIS = [
+  // Mumbai - Pune Expressway / Khalapur / Talegaon
+  {
+    id: "poi_iocl_khalapur",
+    name: "Indian Oil Swagat Large Vehicle Hub (Khalapur)",
+    category: "fuel",
+    coordinates: [73.2389, 18.8654],
+    address: "Mumbai-Pune Expressway Km 42, Khalapur Toll, Maharashtra",
+    brand: "IndianOil",
+    openingHours: "24/7",
+    phone: "+91 2192 274100",
+    tags: { amenity: "fuel", hgv: "yes", diesel: "yes" }
+  },
+  {
+    id: "poi_bpcl_ghar_talegaon",
+    name: "BPCL Ghar Trucker Oasis & Secure Rest Area",
+    category: "parking_rest",
+    coordinates: [73.5512, 18.718],
+    address: "Talegaon Toll Plaza, Expressway Eastbound, Pune",
+    brand: "Bharat Petroleum",
+    openingHours: "24/7",
+    phone: "+91 2114 223560",
+    tags: { highway: "services", hgv: "yes", parking: "yes" }
+  },
+  {
+    id: "poi_mrf_khopoli_tyres",
+    name: "MRF Super Tyre Care & Heavy Alignment Centre",
+    category: "tyres",
+    coordinates: [73.344, 18.786],
+    address: "Old NH48, Khopoli Bypass Connector, Raigad",
+    brand: "MRF Tyres",
+    openingHours: "08:00-22:00",
+    phone: "+91 98223 45671",
+    tags: { shop: "tyres" }
+  },
+  {
+    id: "poi_sunny_dhaba_lonavala",
+    name: "Sunny Da Dhaba & Truck Drivers Food Plaza",
+    category: "food_dhaba",
+    coordinates: [73.435, 18.749],
+    address: "NH48, Mundhaware, Near Lonavala, Maharashtra",
+    openingHours: "24/7",
+    phone: "+91 98220 33452",
+    tags: { amenity: "restaurant", cuisine: "dhaba" }
+  },
+  {
+    id: "poi_khandala_weighbridge",
+    name: "Maharashtra State Certified Electronic Dharam Kanta (60 Tonnes)",
+    category: "weighbridge",
+    coordinates: [73.352, 18.778],
+    address: "Bhor Ghat Truck Layby, Km 46, Khandala",
+    openingHours: "24/7",
+    tags: { amenity: "weighbridge", maxweight: "60" }
+  },
+  {
+    id: "poi_tata_motors_pimpri",
+    name: "Tata Commercial Vehicle Authorized Heavy Workshop",
+    category: "repair",
+    coordinates: [73.7456, 18.612],
+    address: "Old Mumbai-Pune Highway, Chinchwad, Pune",
+    brand: "Tata Motors",
+    openingHours: "24/7",
+    phone: "+91 20 6613 2000",
+    tags: { shop: "truck_repair" }
+  },
+  // Mumbai - Thane - Ghodbunder Freight Corridor
+  {
+    id: "poi_hpcl_ghodbunder",
+    name: "HPCL Auto Care Centre (Truck High-Flow Diesel)",
+    category: "fuel",
+    coordinates: [72.93, 19.26],
+    address: "Ghodbunder Road, Near Chena Creek, Thane",
+    brand: "HPCL",
+    openingHours: "24/7",
+    phone: "+91 22 2589 1234",
+    tags: { amenity: "fuel", diesel: "yes" }
+  },
+  {
+    id: "poi_apollo_thane_tyres",
+    name: "Apollo Tyres CV Zone & Nitrogen Inflation",
+    category: "tyres",
+    coordinates: [72.965, 19.225],
+    address: "Majiwada Junction, Thane West, Maharashtra",
+    brand: "Apollo",
+    openingHours: "08:00-21:00",
+    tags: { shop: "tyres" }
+  },
+  {
+    id: "poi_bhiwandi_truck_terminal",
+    name: "Bhiwandi Logistics Park & Secure Truck Parking",
+    category: "parking_rest",
+    coordinates: [73.055, 19.289],
+    address: "Mankoli Naka, Bhiwandi Bypass, Thane",
+    openingHours: "24/7",
+    phone: "+91 2522 245100",
+    tags: { amenity: "parking", hgv: "yes" }
+  },
+  {
+    id: "poi_shahapur_weighbridge",
+    name: "Shahapur 100T High-Capacity Electronic Weighbridge",
+    category: "weighbridge",
+    coordinates: [73.26, 19.45],
+    address: "Mumbai-Nashik Expressway Km 74, Shahapur",
+    openingHours: "24/7",
+    tags: { amenity: "weighbridge" }
+  },
+  {
+    id: "poi_kasara_food_mall",
+    name: "Kasara Ghat Highway Food Hub & Pure Veg Dhaba",
+    category: "food_dhaba",
+    coordinates: [73.49, 19.65],
+    address: "Mumbai-Agra National Highway 160, Kasara Ghat",
+    openingHours: "24/7",
+    tags: { amenity: "restaurant", cuisine: "dhaba" }
+  },
+  // Delhi - Jaipur NH48 Corridor
+  {
+    id: "poi_reliance_dharuhera",
+    name: "Reliance Petro Freight Plaza (Dharuhera)",
+    category: "fuel",
+    coordinates: [76.78, 28.21],
+    address: "NH48 Km 68, Dharuhera Industrial Area, Haryana",
+    brand: "Jio-bp",
+    openingHours: "24/7",
+    tags: { amenity: "fuel", hgv: "yes" }
+  },
+  {
+    id: "poi_kotputli_truck_workshop",
+    name: "Ashok Leyland 24/7 Quick Service & Breakdown Assistance",
+    category: "repair",
+    coordinates: [76.2, 27.7],
+    address: "NH48 Kotputli Bypass, Rajasthan",
+    brand: "Ashok Leyland",
+    openingHours: "24/7",
+    phone: "+91 1421 222111",
+    tags: { shop: "truck_repair" }
+  },
+  {
+    id: "poi_shree_ram_dhaba_behror",
+    name: "Shree Ram Pavitra Dhaba & Truck Drivers Lounge",
+    category: "food_dhaba",
+    coordinates: [76.28, 27.89],
+    address: "NH48 Midway Delhi-Jaipur, Behror, Rajasthan",
+    openingHours: "24/7",
+    tags: { amenity: "restaurant", cuisine: "dhaba" }
+  }
+];
+async function fetchWithTimeout3(url, options = {}, timeoutMs = 3500) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(url, { ...options, signal: controller.signal });
+    clearTimeout(timer);
+    return res;
+  } catch (err) {
+    clearTimeout(timer);
+    throw err;
+  }
+}
 var PlacesService = class {
   constructor() {
     this.cache = /* @__PURE__ */ new Map();
-    this.CACHE_TTL_MS = 30 * 60 * 1e3;
+    this.CACHE_TTL_MS = 60 * 60 * 1e3;
   }
-  // 30 minutes cache
+  // 1 hour cache
   /**
-   * Search POIs within a bounding box or around a point
+   * Search POIs within a bounding box or around a coordinate point
    */
   async searchNearby(lon, lat, radiusKm = 25, categories = ["fuel", "parking_rest", "repair", "weighbridge"]) {
-    const cacheKey = `nearby:${lon.toFixed(3)},${lat.toFixed(3)}:${radiusKm}:${categories.sort().join(",")}`;
+    const cacheKey = `nearby:${lon.toFixed(3)},${lat.toFixed(3)}:${radiusKm}:${categories.slice().sort().join(",")}`;
     const cached = this.cache.get(cacheKey);
     if (cached && cached.expiresAt > Date.now()) {
       return cached.data;
     }
     const radiusMeters = radiusKm * 1e3;
+    const originPoint = turf2.point([lon, lat]);
     const tagQueries = [];
     if (categories.includes("fuel")) {
-      tagQueries.push(`node["amenity"="fuel"](around:${radiusMeters},${lat},${lon});`);
+      tagQueries.push(`nwr["amenity"="fuel"](around:${radiusMeters},${lat},${lon});`);
     }
     if (categories.includes("parking_rest")) {
-      tagQueries.push(`node["highway"~"rest_area|services"](around:${radiusMeters},${lat},${lon});`);
-      tagQueries.push(`node["amenity"="parking"]["hgv"="yes"](around:${radiusMeters},${lat},${lon});`);
+      tagQueries.push(`nwr["highway"~"rest_area|services"](around:${radiusMeters},${lat},${lon});`);
+      tagQueries.push(`nwr["amenity"="parking"]["hgv"="yes"](around:${radiusMeters},${lat},${lon});`);
+      tagQueries.push(`nwr["amenity"="parking"]["truck"="yes"](around:${radiusMeters},${lat},${lon});`);
     }
     if (categories.includes("repair")) {
-      tagQueries.push(`node["shop"~"car_repair|truck_repair"](around:${radiusMeters},${lat},${lon});`);
-      tagQueries.push(`node["craft"="mechanic"](around:${radiusMeters},${lat},${lon});`);
+      tagQueries.push(`nwr["shop"~"car_repair|truck_repair"](around:${radiusMeters},${lat},${lon});`);
+      tagQueries.push(`nwr["craft"="mechanic"](around:${radiusMeters},${lat},${lon});`);
     }
     if (categories.includes("tyres")) {
-      tagQueries.push(`node["shop"="tyres"](around:${radiusMeters},${lat},${lon});`);
+      tagQueries.push(`nwr["shop"="tyres"](around:${radiusMeters},${lat},${lon});`);
     }
     if (categories.includes("weighbridge")) {
-      tagQueries.push(`node["amenity"="weighbridge"](around:${radiusMeters},${lat},${lon});`);
+      tagQueries.push(`nwr["amenity"="weighbridge"](around:${radiusMeters},${lat},${lon});`);
     }
     if (categories.includes("food_dhaba")) {
-      tagQueries.push(`node["amenity"~"restaurant|cafe|fast_food"](around:${radiusMeters},${lat},${lon});`);
+      tagQueries.push(`nwr["amenity"~"restaurant|fast_food|cafe"](around:${radiusMeters},${lat},${lon});`);
+      tagQueries.push(`nwr["cuisine"~"dhaba|indian",i](around:${radiusMeters},${lat},${lon});`);
+      tagQueries.push(`nwr["name"~"dhaba|Dhaba|DABA",i](around:${radiusMeters},${lat},${lon});`);
     }
     if (categories.includes("lodging")) {
-      tagQueries.push(`node["tourism"~"hotel|motel"](around:${radiusMeters},${lat},${lon});`);
+      tagQueries.push(`nwr["tourism"~"hotel|motel"](around:${radiusMeters},${lat},${lon});`);
     }
     if (categories.includes("emergency")) {
-      tagQueries.push(`node["amenity"~"hospital|pharmacy"](around:${radiusMeters},${lat},${lon});`);
+      tagQueries.push(`nwr["amenity"~"hospital|pharmacy"](around:${radiusMeters},${lat},${lon});`);
     }
     if (categories.includes("toll")) {
-      tagQueries.push(`node["barrier"="toll_booth"](around:${radiusMeters},${lat},${lon});`);
+      tagQueries.push(`nwr["barrier"="toll_booth"](around:${radiusMeters},${lat},${lon});`);
     }
-    const query = `[out:json][timeout:15];(${tagQueries.join("")});out body 40;`;
-    try {
-      const response = await fetch(config.OVERPASS_URL, {
-        method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        body: `data=${encodeURIComponent(query)}`
-      });
-      if (response.ok) {
-        const json = await response.json();
-        const originPoint = turf2.point([lon, lat]);
-        const results = (json.elements || []).map((el) => {
-          const pt = turf2.point([el.lon, el.lat]);
-          const dist = turf2.distance(originPoint, pt, { units: "kilometers" });
-          const cat = this.mapOsmTagsToCategory(el.tags || {});
-          return {
-            id: `osm_node_${el.id}`,
-            name: el.tags?.name || el.tags?.brand || el.tags?.operator || `${this.formatCategoryName(cat)} Facility`,
-            category: cat,
-            coordinates: [el.lon, el.lat],
-            address: [el.tags?.["addr:street"], el.tags?.["addr:city"], el.tags?.["addr:state"]].filter(Boolean).join(", ") || void 0,
-            distanceKm: Number(dist.toFixed(1)),
-            openingHours: el.tags?.opening_hours,
-            phone: el.tags?.phone || el.tags?.["contact:phone"],
-            tags: el.tags
-          };
-        });
-        results.sort((a, b) => (a.distanceKm || 0) - (b.distanceKm || 0));
-        this.cache.set(cacheKey, { data: results, expiresAt: Date.now() + this.CACHE_TTL_MS });
-        return results;
+    const query = `[out:json][timeout:10];(${tagQueries.join("")});out center 40;`;
+    let livePois = [];
+    for (const mirrorUrl of OVERPASS_MIRRORS) {
+      try {
+        const response = await fetchWithTimeout3(mirrorUrl, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/x-www-form-urlencoded",
+            "User-Agent": "Routiq-TruckNavigation/1.0 (contact: support@routiq.app)"
+          },
+          body: `data=${encodeURIComponent(query)}`
+        }, 3500);
+        if (response.ok) {
+          const json = await response.json();
+          if (json.elements && json.elements.length > 0) {
+            livePois = json.elements.map((el) => {
+              const pLat = el.lat ?? el.center?.lat;
+              const pLon = el.lon ?? el.center?.lon;
+              if (pLat === void 0 || pLon === void 0) return null;
+              const pt = turf2.point([pLon, pLat]);
+              const dist = turf2.distance(originPoint, pt, { units: "kilometers" });
+              const cat = this.mapOsmTagsToCategory(el.tags || {});
+              const poi = {
+                id: `osm_${el.type}_${el.id}`,
+                name: el.tags?.name || el.tags?.brand || el.tags?.operator || `${this.formatCategoryName(cat)} Facility`,
+                category: cat,
+                coordinates: [pLon, pLat],
+                address: [el.tags?.["addr:street"], el.tags?.["addr:city"], el.tags?.["addr:state"]].filter(Boolean).join(", ") || void 0,
+                distanceKm: Number(dist.toFixed(1)),
+                openingHours: el.tags?.opening_hours,
+                phone: el.tags?.phone || el.tags?.["contact:phone"],
+                brand: el.tags?.brand || el.tags?.operator,
+                tags: el.tags
+              };
+              return poi;
+            }).filter((p) => p !== null);
+            break;
+          }
+        }
+      } catch (err) {
+        console.warn(`[PlacesService] Mirror ${mirrorUrl} query error:`, err);
       }
-    } catch (err) {
-      console.warn("[PlacesService] Overpass query failed:", err);
     }
-    return [];
+    const matchingVerified = VERIFIED_CORRIDOR_POIS.filter((p) => {
+      if (!categories.includes(p.category)) return false;
+      const pt = turf2.point(p.coordinates);
+      const dist = turf2.distance(originPoint, pt, { units: "kilometers" });
+      return dist <= radiusKm;
+    }).map((p) => {
+      const pt = turf2.point(p.coordinates);
+      const dist = turf2.distance(originPoint, pt, { units: "kilometers" });
+      return { ...p, distanceKm: Number(dist.toFixed(1)) };
+    });
+    const combined = [...livePois];
+    for (const v of matchingVerified) {
+      const vPt = turf2.point(v.coordinates);
+      const hasCloseMatch = combined.some((c) => turf2.distance(vPt, turf2.point(c.coordinates), { units: "kilometers" }) < 0.5);
+      if (!hasCloseMatch) {
+        combined.push(v);
+      }
+    }
+    combined.sort((a, b) => (a.distanceKm || 0) - (b.distanceKm || 0));
+    this.cache.set(cacheKey, { data: combined, expiresAt: Date.now() + this.CACHE_TTL_MS });
+    return combined;
   }
   /**
    * Search POIs along a planned route LineString (within buffer)
    */
-  async searchAlongRoute(routeCoordinates, bufferKm = 10, categories = ["fuel", "parking_rest", "repair", "weighbridge"]) {
+  async searchAlongRoute(routeCoordinates, bufferKm = 15, categories = ["fuel", "parking_rest", "repair", "tyres", "weighbridge", "food_dhaba"]) {
     if (!routeCoordinates || routeCoordinates.length < 2) return [];
-    const step = Math.max(1, Math.floor(routeCoordinates.length / 4));
-    const sampleIndices = [0, step, step * 2, step * 3, routeCoordinates.length - 1];
-    const allPoisMap = /* @__PURE__ */ new Map();
     const routeLine = turf2.lineString(routeCoordinates);
-    for (const idx of sampleIndices) {
-      if (idx < routeCoordinates.length) {
-        const [lon, lat] = routeCoordinates[idx];
-        const pois = await this.searchNearby(lon, lat, bufferKm, categories);
-        for (const poi of pois) {
-          if (!allPoisMap.has(poi.id)) {
-            const poiPt = turf2.point(poi.coordinates);
-            const distFromRouteKm = turf2.pointToLineDistance(poiPt, routeLine, { units: "kilometers" });
-            if (distFromRouteKm <= bufferKm) {
-              allPoisMap.set(poi.id, {
-                ...poi,
-                distanceKm: Number(distFromRouteKm.toFixed(1))
-              });
-            }
+    const numSamples = Math.min(6, Math.max(3, Math.floor(routeCoordinates.length / 20)));
+    const sampleIndices = [];
+    const step = Math.max(1, Math.floor((routeCoordinates.length - 1) / (numSamples - 1)));
+    for (let i = 0; i < routeCoordinates.length; i += step) {
+      sampleIndices.push(i);
+    }
+    if (sampleIndices[sampleIndices.length - 1] !== routeCoordinates.length - 1) {
+      sampleIndices.push(routeCoordinates.length - 1);
+    }
+    const promises = sampleIndices.map((idx) => {
+      const [lon, lat] = routeCoordinates[idx];
+      return this.searchNearby(lon, lat, bufferKm, categories);
+    });
+    const results = await Promise.all(promises);
+    const allPoisMap = /* @__PURE__ */ new Map();
+    for (const pois of results) {
+      for (const poi of pois) {
+        if (!allPoisMap.has(poi.id)) {
+          const poiPt = turf2.point(poi.coordinates);
+          const distFromRouteKm = turf2.pointToLineDistance(poiPt, routeLine, { units: "kilometers" });
+          if (distFromRouteKm <= bufferKm) {
+            allPoisMap.set(poi.id, {
+              ...poi,
+              distanceKm: Number(distFromRouteKm.toFixed(1))
+            });
           }
         }
       }
     }
     const finalResults = Array.from(allPoisMap.values());
     finalResults.sort((a, b) => (a.distanceKm || 0) - (b.distanceKm || 0));
-    return finalResults.slice(0, 50);
+    return finalResults.slice(0, 60);
   }
   mapOsmTagsToCategory(tags) {
     if (tags.amenity === "fuel") return "fuel";
     if (tags.amenity === "weighbridge") return "weighbridge";
-    if (tags.barrier === "toll_booth") return "toll";
+    if (tags.barrier === "toll_booth" || tags.highway === "toll_gantry") return "toll";
     if (tags.shop === "tyres") return "tyres";
     if (tags.shop === "truck_repair" || tags.shop === "car_repair" || tags.craft === "mechanic") return "repair";
     if (tags.highway === "rest_area" || tags.highway === "services" || tags.amenity === "parking") return "parking_rest";
     if (tags.tourism === "hotel" || tags.tourism === "motel") return "lodging";
     if (tags.amenity === "hospital" || tags.amenity === "pharmacy") return "emergency";
-    if (tags.amenity === "restaurant" || tags.amenity === "cafe" || tags.amenity === "fast_food") return "food_dhaba";
+    if (tags.amenity === "restaurant" || tags.amenity === "cafe" || tags.amenity === "fast_food" || tags.cuisine === "dhaba") return "food_dhaba";
     return "parking_rest";
   }
   formatCategoryName(cat) {

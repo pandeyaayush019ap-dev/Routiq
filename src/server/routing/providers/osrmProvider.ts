@@ -2,6 +2,19 @@ import { IRoutingProvider, RouteRequestParams, CalculatedRouteAlternative } from
 import { spatialEngine } from '../../gis/spatialEngine';
 import { config } from '../../config/env';
 
+async function fetchWithTimeout(url: string, options: RequestInit = {}, timeoutMs: number = 3500): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(url, { ...options, signal: controller.signal });
+    clearTimeout(timer);
+    return res;
+  } catch (err) {
+    clearTimeout(timer);
+    throw err;
+  }
+}
+
 export class OsrmRoutingProvider implements IRoutingProvider {
   public name = 'OSRM Road Network Engine + Routiq Spatial GIS';
 
@@ -19,9 +32,9 @@ export class OsrmRoutingProvider implements IRoutingProvider {
     const url = `${config.OSRM_URL}/route/v1/driving/${coordsStr}?overview=full&geometries=geojson&steps=true&alternatives=true`;
 
     try {
-      const response = await fetch(url, {
+      const response = await fetchWithTimeout(url, {
         headers: { 'User-Agent': 'Routiq-HeavyTruckRouting/1.0 (contact: support@routiq.app)' },
-      });
+      }, 3500);
 
       if (!response.ok) return [];
 

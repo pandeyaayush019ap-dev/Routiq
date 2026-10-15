@@ -1,8 +1,15 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { VehicleProfile, RouteCalculationResult, RoadRestriction, RouteCandidate } from '../../types';
 import { routingService } from '../../services/routing/routingService';
+import { geolocationService } from '../../services/navigation/geolocationService';
 import { RouteResults } from './RouteResults';
 import { useTranslation } from '../../i18n/context';
+
+interface WaypointItem {
+  id: string;
+  name: string;
+  coordinates?: [number, number];
+}
 
 interface RoutePlannerProps {
   vehicles: VehicleProfile[];
@@ -17,6 +24,10 @@ interface RoutePlannerProps {
   onStartNavigation?: (route: RouteCandidate) => void;
   isNavigating?: boolean;
   isStartingNavigation?: boolean;
+  destinationOverride?: string | null;
+  onClearDestinationOverride?: () => void;
+  newStopOverride?: { name: string; coordinates: [number, number] } | null;
+  onClearStopOverride?: () => void;
 }
 
 export const RoutePlanner: React.FC<RoutePlannerProps> = ({
@@ -32,31 +43,84 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({
   onStartNavigation,
   isNavigating = false,
   isStartingNavigation = false,
+  destinationOverride,
+  onClearDestinationOverride,
+  newStopOverride,
+  onClearStopOverride,
 }) => {
   const { t, isHindi } = useTranslation();
   const [origin, setOrigin] = useState<string>('Pune');
   const [destination, setDestination] = useState<string>('Mumbai');
+  const [waypoints, setWaypoints] = useState<WaypointItem[]>([]);
   const [departureTime, setDepartureTime] = useState<string>('08:30');
   const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [isAcquiringGps, setIsAcquiringGps] = useState<boolean>(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [lastResult, setLastResult] = useState<RouteCalculationResult | null>(null);
 
-  // Dynamic Geocoding Suggestions
+  // Dynamic Geocoding Suggestions & AbortControllers
   const [originSuggestions, setOriginSuggestions] = useState<Array<{ name: string; address: string }>>([]);
   const [destSuggestions, setDestSuggestions] = useState<Array<{ name: string; address: string }>>([]);
   const [isSearchingOrigin, setIsSearchingOrigin] = useState<boolean>(false);
   const [isSearchingDest, setIsSearchingDest] = useState<boolean>(false);
+  const originAbortRef = useRef<AbortController | null>(null);
+  const destAbortRef = useRef<AbortController | null>(null);
+
+  // Recent Searches
+  const [recentSearches, setRecentSearches] = useState<Array<{ origin: string; destination: string }>>(() => {
+    try {
+      const saved = localStorage.getItem('routiq_recent_searches');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  // Handle external destination override (e.g. from POI "Navigate Here" action)
+  useEffect(() => {
+    if (destinationOverride) {
+      setDestination(destinationOverride);
+      onClearDestinationOverride?.();
+    }
+  }, [destinationOverride, onClearDestinationOverride]);
+
+  // Handle external stop override (e.g. from POI "Add as Stop" action)
+  useEffect(() => {
+    if (newStopOverride) {
+      setWaypoints((prev) => [
+        ...prev,
+        {
+          id: `wp_${Date.now()}`,
+          name: newStopOverride.name,
+          coordinates: newStopOverride.coordinates,
+        },
+      ]);
+      onClearStopOverride?.();
+    }
+  }, [newStopOverride, onClearStopOverride]);
 
   const availableCities = routingService.getAvailableCities();
 
   const handleOriginChange = (val: string) => {
     setOrigin(val);
+    if (originAbortRef.current) originAbortRef.current.abort();
+
     if (val.trim().length >= 3) {
+      const controller = new AbortController();
+      originAbortRef.current = controller;
       setIsSearchingOrigin(true);
-      routingService.searchPlaces(val).then((res) => {
-        setOriginSuggestions(res);
-        setIsSearchingOrigin(false);
-      }).catch(() => setIsSearchingOrigin(false));
+
+      routingService
+        .searchPlaces(val)
+        .then((res) => {
+          if (!controller.signal.aborted) {
+            setOriginSuggestions(res);
+            setIsSearchingOrigin(false);
+          }
+        })
+        .catch(() => {
+          if (!controller.signal.aborted) setIsSearchingOrigin(false);
+        });
     } else {
       setOriginSuggestions([]);
     }
@@ -64,14 +128,52 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({
 
   const handleDestChange = (val: string) => {
     setDestination(val);
+    if (destAbortRef.current) destAbortRef.current.abort();
+
     if (val.trim().length >= 3) {
+      const controller = new AbortController();
+      destAbortRef.current = controller;
       setIsSearchingDest(true);
-      routingService.searchPlaces(val).then((res) => {
-        setDestSuggestions(res);
-        setIsSearchingDest(false);
-      }).catch(() => setIsSearchingDest(false));
+
+      routingService
+        .searchPlaces(val)
+        .then((res) => {
+          if (!controller.signal.aborted) {
+            setDestSuggestions(res);
+            setIsSearchingDest(false);
+          }
+        })
+        .catch(() => {
+          if (!controller.signal.aborted) setIsSearchingDest(false);
+        });
     } else {
       setDestSuggestions([]);
+    }
+  };
+
+  const handleUseCurrentLocation = async () => {
+    setIsAcquiringGps(true);
+    try {
+      const pos = await geolocationService.requestPosition();
+      // Reverse geocode
+      try {
+        const res = await fetch(`/api/geocoding/reverse?lat=${pos.latitude}&lon=${pos.longitude}`);
+        if (res.ok) {
+          const data = await res.json();
+          if (data.place?.name?.en) {
+            setOrigin(data.place.name.en);
+            setIsAcquiringGps(false);
+            return;
+          }
+        }
+      } catch {
+        // fallback
+      }
+      setOrigin(`${pos.latitude.toFixed(4)}, ${pos.longitude.toFixed(4)}`);
+    } catch {
+      alert(isHindi ? 'जीपीएस स्थान प्राप्त करने में असमर्थ।' : 'Unable to acquire GPS location.');
+    } finally {
+      setIsAcquiringGps(false);
     }
   };
 
@@ -87,6 +189,40 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({
     setDestination(dest);
     setOriginSuggestions([]);
     setDestSuggestions([]);
+  };
+
+  const handleAddStop = () => {
+    if (waypoints.length >= 3) {
+      alert(isHindi ? 'अधिकतम 3 स्टॉप जोड़े जा सकते हैं।' : 'Maximum 3 intermediate stops supported.');
+      return;
+    }
+    setWaypoints((prev) => [
+      ...prev,
+      { id: `wp_${Date.now()}`, name: '' },
+    ]);
+  };
+
+  const handleUpdateStop = (id: string, name: string) => {
+    setWaypoints((prev) =>
+      prev.map((w) => (w.id === id ? { ...w, name } : w))
+    );
+  };
+
+  const handleRemoveStop = (id: string) => {
+    setWaypoints((prev) => prev.filter((w) => w.id !== id));
+  };
+
+  const saveRecentSearch = (orig: string, dest: string) => {
+    try {
+      const filtered = recentSearches.filter(
+        (s) => !(s.origin.toLowerCase() === orig.toLowerCase() && s.destination.toLowerCase() === dest.toLowerCase())
+      );
+      const updated = [{ origin: orig, destination: dest }, ...filtered].slice(0, 4);
+      setRecentSearches(updated);
+      localStorage.setItem('routiq_recent_searches', JSON.stringify(updated));
+    } catch {
+      // ignore
+    }
   };
 
   const handleFindRoute = async (e?: React.FormEvent) => {
@@ -105,9 +241,17 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({
     setIsLoading(true);
 
     try {
+      const validWaypoints = waypoints
+        .filter((w) => w.name.trim().length > 0)
+        .map((w) => ({
+          name: w.name,
+          coordinates: w.coordinates || ([0, 0] as [number, number]),
+        }));
+
       const result = await routingService.calculateRoutes({
         originName: origin,
         destinationName: destination,
+        waypoints: validWaypoints.length > 0 ? validWaypoints : undefined,
         vehicle: activeVehicle,
         departureTime: departureTime || undefined,
       });
@@ -125,6 +269,7 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({
       } else {
         setLastResult(result);
         onRoutesCalculated(result);
+        saveRecentSearch(origin, destination);
       }
     } catch (err) {
       console.error('Route calculation error:', err);
@@ -147,64 +292,80 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({
         </div>
       </div>
 
-      {/* Demo Notice */}
-      <div className="bg-blue-50 border border-blue-200 rounded-xl px-3 py-2 text-[11px] text-blue-900 font-medium">
-        ℹ️ {t('demoNotice')}
-      </div>
-
-      {/* Corridor Quick Buttons */}
+      {/* Corridor Quick Buttons & Recent Searches */}
       <div>
-        <div className="text-xs font-bold text-slate-500 mb-1.5 uppercase tracking-wider">
-          {t('quickCorridors')}
+        <div className="flex items-center justify-between mb-1.5">
+          <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">
+            {recentSearches.length > 0 ? (isHindi ? 'हालिया व मुख्य मार्ग' : 'Recent & Corridors') : t('quickCorridors')}
+          </span>
         </div>
         <div className="flex flex-wrap gap-1.5">
+          {recentSearches.map((rec, idx) => (
+            <button
+              key={idx}
+              type="button"
+              onClick={() => handleQuickCorridor(rec.origin, rec.destination)}
+              className="px-2.5 py-1.5 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-bold border border-blue-200 transition-colors flex items-center gap-1 cursor-pointer"
+            >
+              <span>🕒</span>
+              <span>{rec.origin} ⇄ {rec.destination}</span>
+            </button>
+          ))}
           <button
             type="button"
             onClick={() => handleQuickCorridor('Pune', 'Mumbai')}
-            className="px-2.5 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold transition-colors"
+            className="px-2.5 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold transition-colors cursor-pointer"
           >
             Pune ⇄ Mumbai
           </button>
           <button
             type="button"
             onClick={() => handleQuickCorridor('Mumbai', 'Nashik')}
-            className="px-2.5 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold transition-colors"
+            className="px-2.5 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold transition-colors cursor-pointer"
           >
             Mumbai ⇄ Nashik
           </button>
           <button
             type="button"
             onClick={() => handleQuickCorridor('Pune', 'Nashik')}
-            className="px-2.5 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold transition-colors"
+            className="px-2.5 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold transition-colors cursor-pointer"
           >
             Pune ⇄ Nashik
           </button>
           <button
             type="button"
             onClick={() => handleQuickCorridor('Delhi', 'Jaipur')}
-            className="px-2.5 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold transition-colors"
+            className="px-2.5 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold transition-colors cursor-pointer"
           >
             Delhi ⇄ Jaipur
           </button>
         </div>
       </div>
 
-      {/* Route Form */}
+      {/* Directions Form */}
       <form onSubmit={handleFindRoute} className="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm space-y-3.5">
         <datalist id="city-suggestions">
           {availableCities.map((city) => (
-            <option
-              key={city.id}
-              value={isHindi ? city.name.hi : city.name.en}
-            />
+            <option key={city.id} value={isHindi ? city.name.hi : city.name.en} />
           ))}
         </datalist>
 
         {/* Origin */}
         <div className="relative">
-          <label htmlFor="origin-input" className="block text-xs font-bold text-slate-700 mb-1">
-            📍 {t('startLocation')}
-          </label>
+          <div className="flex items-center justify-between mb-1">
+            <label htmlFor="origin-input" className="text-xs font-bold text-slate-700">
+              📍 {t('startLocation')}
+            </label>
+            <button
+              type="button"
+              onClick={handleUseCurrentLocation}
+              disabled={isAcquiringGps}
+              className="text-[11px] font-bold text-blue-600 hover:underline flex items-center gap-1 cursor-pointer"
+            >
+              <span>{isAcquiringGps ? '⏳' : '🎯'}</span>
+              <span>{isHindi ? 'मेरा स्थान' : 'My Location'}</span>
+            </button>
+          </div>
           <input
             id="origin-input"
             list="city-suggestions"
@@ -227,7 +388,7 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({
                     setOrigin(sug.name);
                     setOriginSuggestions([]);
                   }}
-                  className="w-full text-left px-3 py-2 hover:bg-blue-50 transition-colors"
+                  className="w-full text-left px-3 py-2 hover:bg-blue-50 transition-colors cursor-pointer"
                 >
                   <div className="text-xs font-bold text-slate-800">{sug.name}</div>
                   <div className="text-[10px] text-slate-500 truncate">{sug.address}</div>
@@ -237,18 +398,52 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({
           )}
         </div>
 
-        {/* Swap Control */}
+        {/* Intermediate Waypoints (Stops) */}
+        {waypoints.map((wp, idx) => (
+          <div key={wp.id} className="relative flex items-center gap-2">
+            <div className="w-6 h-6 rounded-full bg-amber-500 text-white font-black text-xs flex items-center justify-center shrink-0">
+              {idx + 1}
+            </div>
+            <input
+              type="text"
+              value={wp.name}
+              onChange={(e) => handleUpdateStop(wp.id, e.target.value)}
+              placeholder={`Stop ${idx + 1} (e.g. Lonavala / Panvel)`}
+              className="flex-1 px-3 py-2 rounded-xl border border-slate-300 text-sm font-medium text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-500 min-h-[42px]"
+            />
+            <button
+              type="button"
+              onClick={() => handleRemoveStop(wp.id)}
+              className="text-slate-400 hover:text-red-600 font-bold px-2 py-1 text-sm cursor-pointer"
+              title="Remove Stop"
+            >
+              ✕
+            </button>
+          </div>
+        ))}
+
+        {/* Swap Control & Add Stop */}
         <div className="flex items-center justify-between">
           <div className="h-px bg-slate-200 flex-1 mr-2" />
-          <button
-            type="button"
-            onClick={handleSwap}
-            title={t('swapLocations')}
-            aria-label={t('swapLocations')}
-            className="w-10 h-10 rounded-full border border-slate-300 bg-slate-50 hover:bg-slate-100 flex items-center justify-center text-slate-700 font-black text-base transition-colors shrink-0"
-          >
-            ⇅
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={handleSwap}
+              title={t('swapLocations')}
+              aria-label={t('swapLocations')}
+              className="w-9 h-9 rounded-full border border-slate-300 bg-slate-50 hover:bg-slate-100 flex items-center justify-center text-slate-700 font-black text-sm transition-colors cursor-pointer shrink-0"
+            >
+              ⇅
+            </button>
+            <button
+              type="button"
+              onClick={handleAddStop}
+              className="px-2.5 py-1 rounded-full border border-slate-300 bg-slate-50 hover:bg-slate-100 text-slate-700 text-[11px] font-bold transition-colors cursor-pointer flex items-center gap-1"
+            >
+              <span>➕</span>
+              <span>{isHindi ? 'स्टॉप जोड़ें' : 'Add Stop'}</span>
+            </button>
+          </div>
           <div className="h-px bg-slate-200 flex-1 ml-2" />
         </div>
 
@@ -279,7 +474,7 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({
                     setDestination(sug.name);
                     setDestSuggestions([]);
                   }}
-                  className="w-full text-left px-3 py-2 hover:bg-blue-50 transition-colors"
+                  className="w-full text-left px-3 py-2 hover:bg-blue-50 transition-colors cursor-pointer"
                 >
                   <div className="text-xs font-bold text-slate-800">{sug.name}</div>
                   <div className="text-[10px] text-slate-500 truncate">{sug.address}</div>
@@ -298,7 +493,7 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({
             <button
               type="button"
               onClick={onNavigateToVehicles}
-              className="text-[11px] font-bold text-blue-600 hover:underline"
+              className="text-[11px] font-bold text-blue-600 hover:underline cursor-pointer"
             >
               + {t('addVehicleBtn')}
             </button>
@@ -307,7 +502,7 @@ export const RoutePlanner: React.FC<RoutePlannerProps> = ({
             id="vehicle-select"
             value={activeVehicle.id}
             onChange={(e) => onSelectVehicle(e.target.value)}
-            className="w-full px-3 py-2.5 rounded-xl border border-slate-300 text-sm font-semibold text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-600 min-h-[46px] bg-white"
+            className="w-full px-3 py-2.5 rounded-xl border border-slate-300 text-sm font-semibold text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-600 min-h-[46px] bg-white cursor-pointer"
           >
             {vehicles.map((v) => (
               <option key={v.id} value={v.id}>

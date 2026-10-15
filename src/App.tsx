@@ -7,8 +7,10 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { LanguageProvider } from './i18n/context';
 import { Header } from './components/layout/Header';
 import { Navigation, ActiveTab } from './components/layout/Navigation';
-import { InteractiveMap } from './components/map/InteractiveMap';
+import { InteractiveMap, CommercialPoiItem } from './components/map/InteractiveMap';
 import { RoutePlanner } from './components/routing/RoutePlanner';
+import { FloatingSearchBar } from './components/layout/FloatingSearchBar';
+import { BottomSheet, SnapPoint } from './components/layout/BottomSheet';
 import { RestrictionDetailModal } from './components/routing/RestrictionDetailModal';
 import { VehicleManager } from './components/vehicles/VehicleManager';
 import { VehicleFormModal } from './components/vehicles/VehicleFormModal';
@@ -22,6 +24,7 @@ import { routingService } from './services/routing/routingService';
 import { authService } from './services/auth/authService';
 import { geolocationService, GpsPosition } from './services/navigation/geolocationService';
 import { navigationEngine, ManeuverInfo } from './services/navigation/navigationEngine';
+import { voiceGuidance } from './services/navigation/voiceGuidanceService';
 import { useTranslation } from './i18n/context';
 import { VehicleProfile, RouteCalculationResult, RouteCandidate, RoadRestriction } from './types';
 import { User } from './types/auth';
@@ -37,6 +40,10 @@ const AppContent: React.FC = () => {
   const [routeResult, setRouteResult] = useState<RouteCalculationResult | null>(null);
   const [selectedRouteId, setSelectedRouteId] = useState<string | undefined>(undefined);
   const [activeRestriction, setActiveRestriction] = useState<RoadRestriction | null>(null);
+  const [destinationOverride, setDestinationOverride] = useState<string | null>(null);
+  const [newStopOverride, setNewStopOverride] = useState<{ name: string; coordinates: [number, number] } | null>(null);
+  const [sheetSnap, setSheetSnap] = useState<SnapPoint>('half');
+  const [activeCategory, setActiveCategory] = useState<string>('fuel');
 
   // Live GPS Navigation State
   const [isNavigating, setIsNavigating] = useState<boolean>(false);
@@ -52,11 +59,44 @@ const AppContent: React.FC = () => {
   const [navError, setNavError] = useState<string | null>(null);
   const [gpsNotice, setGpsNotice] = useState<string | null>(null);
 
+  // Network & PWA Install State
+  const [isOnline, setIsOnline] = useState<boolean>(() => (typeof navigator !== 'undefined' ? navigator.onLine : true));
+  const [installPrompt, setInstallPrompt] = useState<any>(null);
+
   // Modals
   const [isAuthModalOpen, setIsAuthModalOpen] = useState<boolean>(false);
   const [isSubModalOpen, setIsSubModalOpen] = useState<boolean>(false);
   const [editingVehicle, setEditingVehicle] = useState<VehicleProfile | null>(null);
   const [isVehicleModalOpen, setIsVehicleModalOpen] = useState<boolean>(false);
+
+  // Online / Offline and PWA Install listeners
+  useEffect(() => {
+    const handleOnline = () => setIsOnline(true);
+    const handleOffline = () => setIsOnline(false);
+    const handleBeforeInstall = (e: any) => {
+      e.preventDefault();
+      setInstallPrompt(e);
+    };
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    window.addEventListener('beforeinstallprompt', handleBeforeInstall);
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+      window.removeEventListener('beforeinstallprompt', handleBeforeInstall);
+    };
+  }, []);
+
+  const handleInstallApp = async () => {
+    if (!installPrompt) return;
+    installPrompt.prompt();
+    const { outcome } = await installPrompt.userChoice;
+    if (outcome === 'accepted') {
+      setInstallPrompt(null);
+    }
+  };
 
   // Load initial demo corridor on startup so the MapLibre map renders immediately
   const loadInitialRoute = useCallback(async (currentVeh: VehicleProfile) => {
@@ -213,6 +253,9 @@ const AppContent: React.FC = () => {
         },
       });
 
+      // Keep screen awake during navigation
+      voiceGuidance.requestWakeLock().catch(() => {});
+
       setIsNavigating(true);
     } catch (err: any) {
       console.error('[Navigation] Start failed:', err);
@@ -226,6 +269,7 @@ const AppContent: React.FC = () => {
 
   const handleStopNavigation = async () => {
     geolocationService.stopTracking();
+    voiceGuidance.releaseWakeLock().catch(() => {});
     if (activeTripId) {
       await navigationEngine.endTrip(activeTripId);
       setActiveTripId(null);
@@ -244,6 +288,7 @@ const AppContent: React.FC = () => {
   useEffect(() => {
     return () => {
       geolocationService.stopTracking();
+      voiceGuidance.releaseWakeLock().catch(() => {});
     };
   }, []);
 
@@ -256,7 +301,7 @@ const AppContent: React.FC = () => {
   );
 
   return (
-    <div className="min-h-screen flex flex-col bg-slate-50 text-slate-800">
+    <div className="min-h-screen flex flex-col bg-slate-100 text-slate-800">
       {/* Top Header */}
       <Header
         currentUser={currentUser}
@@ -268,6 +313,38 @@ const AppContent: React.FC = () => {
         onOpenSubscription={() => setIsSubModalOpen(true)}
       />
 
+      {/* Offline Alert Banner */}
+      {!isOnline && (
+        <div className="bg-amber-600 text-white px-4 py-1.5 text-xs font-bold text-center flex items-center justify-center gap-2 shadow-sm">
+          <span>📶</span>
+          <span>
+            {isHindi
+              ? 'ऑफ़लाइन मोड: पहले से सहेजे गए मार्ग और स्थानीय डेटा का उपयोग हो रहा है।'
+              : 'Offline Mode: Operating with pre-cached routes and corridor maps.'}
+          </span>
+        </div>
+      )}
+
+      {/* PWA Install Banner */}
+      {installPrompt && !isNavigating && (
+        <div className="bg-blue-600 text-white px-4 py-2 text-xs font-bold flex items-center justify-between shadow-md">
+          <div className="flex items-center gap-2">
+            <span>📲</span>
+            <span>
+              {isHindi
+                ? 'Routiq को अपने फ़ोन पर ऐप की तरह इंस्टॉल करें'
+                : 'Install Routiq Truck App for offline GPS & faster access'}
+            </span>
+          </div>
+          <button
+            onClick={handleInstallApp}
+            className="px-3 py-1 bg-white text-blue-700 rounded-lg text-xs font-extrabold hover:bg-blue-50 transition-colors shadow-xs cursor-pointer"
+          >
+            {isHindi ? 'इंस्टॉल करें' : 'Install'}
+          </button>
+        </div>
+      )}
+
       {/* Navigation Tab Bar */}
       <Navigation
         activeTab={activeTab}
@@ -276,11 +353,51 @@ const AppContent: React.FC = () => {
       />
 
       {/* Main View Area */}
-      <main className="flex-1 max-w-7xl w-full mx-auto p-3 sm:p-4 md:p-6">
+      <main className="flex-1 w-full mx-auto p-2 sm:p-3 relative overflow-hidden flex flex-col">
         {activeTab === 'plan' && (
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 h-full items-start">
-            {/* Left Column: Route Form & Results (Scrollable Sidebar) */}
-            <div className="lg:col-span-5 xl:col-span-4 order-2 lg:order-1">
+          <div className="relative w-full h-[calc(100vh-130px)] sm:h-[calc(100vh-140px)] rounded-3xl overflow-hidden shadow-lg border border-slate-200 bg-slate-900">
+            {/* Full-Screen Map Canvas */}
+            <InteractiveMap
+              origin={routeResult?.origin}
+              destination={routeResult?.destination}
+              selectedRoute={selectedRoute}
+              alternativeRoutes={alternativeRoutes}
+              onSelectRoute={setSelectedRouteId}
+              onSelectRestriction={setActiveRestriction}
+              driverLocation={driverPosition}
+              isNavigating={isNavigating}
+              onNavigateToPoi={(poi: CommercialPoiItem) => {
+                setDestinationOverride(poi.name);
+                setSheetSnap('half');
+              }}
+              onAddPoiStop={(poi: CommercialPoiItem) => {
+                setNewStopOverride({ name: poi.name, coordinates: poi.coordinates });
+                setSheetSnap('full');
+              }}
+            />
+
+            {/* Floating Top Search Bar with Category Chips */}
+            <FloatingSearchBar
+              onSelectPlace={(name) => {
+                setDestinationOverride(name);
+                setSheetSnap('half');
+              }}
+              onOpenDirections={() => {
+                setSheetSnap(sheetSnap === 'peek' ? 'half' : 'full');
+              }}
+              onSelectCategory={(cat) => {
+                setActiveCategory(cat);
+              }}
+              activeCategory={activeCategory}
+              isNavigating={isNavigating}
+            />
+
+            {/* Draggable Bottom Sheet on Mobile / Left Floating Panel on Desktop */}
+            <BottomSheet
+              snapPoint={sheetSnap}
+              onSnapChange={setSheetSnap}
+              isNavigating={isNavigating}
+            >
               <RoutePlanner
                 vehicles={vehicles}
                 activeVehicle={activeVehicle}
@@ -288,6 +405,7 @@ const AppContent: React.FC = () => {
                 onRoutesCalculated={(res) => {
                   setRouteResult(res);
                   setSelectedRouteId(res.recommendedRouteId || res.routes[0]?.id);
+                  setSheetSnap('half');
                 }}
                 routeResult={routeResult}
                 selectedRouteId={selectedRouteId}
@@ -300,51 +418,43 @@ const AppContent: React.FC = () => {
                 onStartNavigation={handleStartNavigation}
                 isNavigating={isNavigating}
                 isStartingNavigation={isStartingNavigation}
+                destinationOverride={destinationOverride}
+                onClearDestinationOverride={() => setDestinationOverride(null)}
+                newStopOverride={newStopOverride}
+                onClearStopOverride={() => setNewStopOverride(null)}
               />
-            </div>
+            </BottomSheet>
 
-            {/* Right Column: Genuine MapLibre Interactive Map */}
-            <div className="lg:col-span-7 xl:col-span-8 order-1 lg:order-2 h-[460px] sm:h-[520px] lg:h-[calc(100vh-160px)] lg:sticky lg:top-24 relative">
-              <InteractiveMap
-                origin={routeResult?.origin}
-                destination={routeResult?.destination}
-                selectedRoute={selectedRoute}
-                alternativeRoutes={alternativeRoutes}
-                onSelectRoute={setSelectedRouteId}
-                onSelectRestriction={setActiveRestriction}
-                driverLocation={driverPosition}
-                isNavigating={isNavigating}
+            {/* In-Navigation HUD Overlay */}
+            {isNavigating && (
+              <NavigationHud
+                currentManeuver={currentManeuver}
+                currentPosition={driverPosition}
+                remainingDistanceKm={remainingDistanceKm}
+                remainingDurationMinutes={remainingDurationMinutes}
+                isOffRoute={isOffRoute}
+                isApproachingOrigin={isApproachingOrigin}
+                offRouteDistanceMeters={offRouteDistanceMeters}
+                onStopNavigation={handleStopNavigation}
+                onRecalculate={() => {
+                  if (selectedRoute) handleStartNavigation(selectedRoute);
+                }}
+                routeName={selectedRoute ? { en: selectedRoute.name.en, hi: selectedRoute.name.hi } : undefined}
+                gpsNotice={gpsNotice}
+                restrictions={selectedRoute?.restrictions}
               />
-
-              {isNavigating && (
-                <NavigationHud
-                  currentManeuver={currentManeuver}
-                  currentPosition={driverPosition}
-                  remainingDistanceKm={remainingDistanceKm}
-                  remainingDurationMinutes={remainingDurationMinutes}
-                  isOffRoute={isOffRoute}
-                  isApproachingOrigin={isApproachingOrigin}
-                  offRouteDistanceMeters={offRouteDistanceMeters}
-                  onStopNavigation={handleStopNavigation}
-                  onRecalculate={() => {
-                    if (selectedRoute) handleStartNavigation(selectedRoute);
-                  }}
-                  routeName={selectedRoute ? { en: selectedRoute.name.en, hi: selectedRoute.name.hi } : undefined}
-                  gpsNotice={gpsNotice}
-                />
-              )}
-            </div>
+            )}
           </div>
         )}
 
         {activeTab === 'fleet' && (
-          <div className="py-1">
+          <div className="py-2 max-w-7xl mx-auto w-full">
             <FleetDashboard />
           </div>
         )}
 
         {activeTab === 'vehicles' && (
-          <div className="max-w-4xl mx-auto py-2">
+          <div className="max-w-4xl mx-auto py-2 w-full">
             <VehicleManager
               vehicles={vehicles}
               activeVehicleId={activeVehicle.id}
@@ -363,7 +473,7 @@ const AppContent: React.FC = () => {
         )}
 
         {activeTab === 'settings' && (
-          <div className="py-2">
+          <div className="py-2 max-w-4xl mx-auto w-full">
             <SettingsHelp />
           </div>
         )}

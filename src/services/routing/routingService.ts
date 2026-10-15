@@ -82,6 +82,7 @@ export class ProductionRoutingService implements IRoutingService {
         destinationName,
         originCoordinates: originMatch?.coordinates || [0, 0],
         destinationCoordinates: destMatch?.coordinates || [0, 0],
+        waypoints: params.waypoints?.map((w) => w.coordinates) || undefined,
         vehicle: {
           id: vehicle.id,
           name: vehicle.name,

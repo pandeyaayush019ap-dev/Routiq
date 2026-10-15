@@ -47,6 +47,7 @@ export interface RoadRestriction {
   sourceAuthority?: string;
   verificationStatus: 'verified' | 'unverified_demo';
   status?: 'OK' | 'WARNING' | 'BLOCKED';
+  distanceAlongRouteKm?: number;
 }
 
 export type RouteStatus = 'RECOMMENDED' | 'WARNING' | 'BLOCKED';

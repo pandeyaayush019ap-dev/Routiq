@@ -3,6 +3,7 @@ import { RouteCalculationResult, VehicleProfile, CityLocation } from '../../type
 export interface RouteSearchParams {
   originName: string;
   destinationName: string;
+  waypoints?: Array<{ name: string; coordinates: [number, number] }>;
   vehicle: VehicleProfile;
   departureTime?: string;
 }

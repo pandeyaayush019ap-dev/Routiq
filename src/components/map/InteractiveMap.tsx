@@ -2,7 +2,13 @@ import React, { useEffect, useRef, useState, useCallback } from 'react';
 import * as maplibregl from 'maplibre-gl';
 import type { Feature, LineString } from 'geojson';
 import { RouteCandidate, RoadRestriction, CityLocation } from '../../types';
-import { OSM_RASTER_STYLE, DEFAULT_MAP_CENTER, DEFAULT_MAP_ZOOM } from '../../services/maps/maplibreConfig';
+import {
+  OSM_RASTER_STYLE,
+  DEFAULT_MAP_CENTER,
+  DEFAULT_MAP_ZOOM,
+  MAP_STYLES,
+  MapStyleKey,
+} from '../../services/maps/maplibreConfig';
 import { calculateBounds } from '../../services/gis/geoUtils';
 import { routingService } from '../../services/routing/routingService';
 import { MapLegend } from './MapLegend';
@@ -25,6 +31,7 @@ export interface CommercialPoiItem {
 interface InteractiveMapProps {
   origin?: CityLocation;
   destination?: CityLocation;
+  waypoints?: Array<{ name: string; coordinates: [number, number] }>;
   selectedRoute?: RouteCandidate;
   alternativeRoutes?: RouteCandidate[];
   onSelectRoute?: (routeId: string) => void;
@@ -34,11 +41,14 @@ interface InteractiveMapProps {
   fleetVehicles?: FleetVehicle[];
   onSelectFleetVehicle?: (vehicle: FleetVehicle) => void;
   fleetHistoryCoordinates?: [number, number][];
+  onNavigateToPoi?: (poi: CommercialPoiItem) => void;
+  onAddPoiStop?: (poi: CommercialPoiItem) => void;
 }
 
 export const InteractiveMap: React.FC<InteractiveMapProps> = ({
   origin,
   destination,
+  waypoints = [],
   selectedRoute,
   alternativeRoutes = [],
   onSelectRoute,
@@ -48,6 +58,8 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
   fleetVehicles = [],
   onSelectFleetVehicle,
   fleetHistoryCoordinates,
+  onNavigateToPoi,
+  onAddPoiStop,
 }) => {
   const { isHindi } = useTranslation();
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
@@ -59,8 +71,13 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
   const [mapError, setMapError] = useState<boolean>(false);
   const [isMapLoaded, setIsMapLoaded] = useState<boolean>(false);
 
+  // Map Style & Layer State
+  const [currentMapStyle, setCurrentMapStyle] = useState<MapStyleKey>('streets');
+  const [isStyleMenuOpen, setIsStyleMenuOpen] = useState<boolean>(false);
+
   // POI Layer State
   const [showPois, setShowPois] = useState<boolean>(true);
+  const [poiCategoryFilter, setPoiCategoryFilter] = useState<string>('all');
   const [poiList, setPoiList] = useState<CommercialPoiItem[]>([]);
   const [activePoi, setActivePoi] = useState<CommercialPoiItem | null>(null);
 
@@ -92,6 +109,11 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
         setIsMapLoaded(true);
       });
 
+      // Safe style reload listener: When user switches style (e.g. Satellite), re-add route layers
+      map.on('style.load', () => {
+        setIsMapLoaded(true);
+      });
+
       map.on('error', (e) => {
         console.warn('MapLibre error encountered:', e);
       });
@@ -109,6 +131,14 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
       }
     };
   }, []);
+
+  // Switch Map Style safely
+  const handleSwitchStyle = (styleKey: MapStyleKey) => {
+    setCurrentMapStyle(styleKey);
+    setIsStyleMenuOpen(false);
+    if (!mapRef.current) return;
+    mapRef.current.setStyle(MAP_STYLES[styleKey].style);
+  };
 
   // Fetch POIs when selected route changes
   useEffect(() => {
@@ -137,9 +167,14 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
   // Update Route Layers and Markers
   const updateMapLayers = useCallback(() => {
     const map = mapRef.current;
-    if (!map || !isMapLoaded) return;
+    if (!map || !map.isStyleLoaded()) {
+      if (map) {
+        map.once('style.load', () => updateMapLayers());
+      }
+      return;
+    }
 
-    // Clear previous markers
+    // Clear previous route markers
     markersRef.current.forEach((m) => m.remove());
     markersRef.current = [];
 
@@ -147,7 +182,6 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
     const allCoords: [number, number][] = [];
 
     // --- 1. Manage Alternative Routes Polylines ---
-    // Clean up stale alternative route layers/sources from previous queries
     let altCleanIdx = alternativeRoutes.length;
     while (map.getLayer(`alt-route-layer-${altCleanIdx}`)) {
       map.removeLayer(`alt-route-layer-${altCleanIdx}`);
@@ -203,9 +237,9 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
           },
           paint: {
             'line-color': '#64748B',
-            'line-width': 4,
+            'line-width': 5,
             'line-dasharray': [2, 2],
-            'line-opacity': 0.75,
+            'line-opacity': 0.8,
           },
         });
 
@@ -252,7 +286,7 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
         ],
       };
 
-      // 2a. Source Management (Add or SetData)
+      // 2a. Source Management
       if (map.getSource(selectedSourceId)) {
         (map.getSource(selectedSourceId) as maplibregl.GeoJSONSource).setData(selectedGeoJson);
       } else {
@@ -262,7 +296,7 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
         });
       }
 
-      // 2b. High-Contrast White Casing Border Layer
+      // 2b. High-Contrast White Casing Border Layer (10px)
       if (!map.getLayer(selectedLayerCasingId)) {
         map.addLayer({
           id: selectedLayerCasingId,
@@ -283,7 +317,7 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
         map.setLayoutProperty(selectedLayerCasingId, 'visibility', 'visible');
       }
 
-      // 2c. Main Heavy Vehicle Royal Blue Polyline Layer
+      // 2c. Main Heavy Vehicle Royal Blue Polyline Layer (6px)
       if (!map.getLayer(selectedLayerId)) {
         map.addLayer({
           id: selectedLayerId,
@@ -304,7 +338,7 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
         map.setLayoutProperty(selectedLayerId, 'visibility', 'visible');
       }
 
-      // 2d. Strictly bring selected route layers to the TOP of the layer stack
+      // 2d. Bring route layers to top
       map.moveLayer(selectedLayerCasingId);
       map.moveLayer(selectedLayerId);
 
@@ -330,7 +364,6 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
         markersRef.current.push(marker);
       });
     } else {
-      // Hide route layers if no active route
       if (map.getLayer(selectedLayerId)) {
         map.setLayoutProperty(selectedLayerId, 'visibility', 'none');
       }
@@ -354,7 +387,22 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
       markersRef.current.push(originMarker);
     }
 
-    // --- 4. Add Destination Marker (B) ---
+    // --- 4. Add Intermediate Waypoints (Stops) ---
+    waypoints.forEach((wp, wpIdx) => {
+      allCoords.push(wp.coordinates);
+      const wpEl = document.createElement('div');
+      wpEl.className =
+        'w-7 h-7 rounded-full bg-amber-500 text-white font-black text-xs flex items-center justify-center border-2 border-white shadow-md';
+      wpEl.innerText = String(wpIdx + 1);
+      wpEl.title = `Stop ${wpIdx + 1}: ${wp.name}`;
+
+      const wpMarker = new maplibregl.Marker({ element: wpEl })
+        .setLngLat(wp.coordinates)
+        .addTo(map);
+      markersRef.current.push(wpMarker);
+    });
+
+    // --- 5. Add Destination Marker (B) ---
     if (destination) {
       allCoords.push(destination.coordinates);
       const destEl = document.createElement('div');
@@ -369,7 +417,7 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
       markersRef.current.push(destMarker);
     }
 
-    // --- 5. Fit Bounds to Route (Only when not in active GPS navigation follow mode) ---
+    // --- 6. Fit Bounds to Route ---
     if (allCoords.length >= 2 && !isNavigating) {
       const bounds = calculateBounds(allCoords);
       map.fitBounds(
@@ -378,25 +426,25 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
           [bounds.maxLng, bounds.maxLat],
         ],
         {
-          padding: { top: 60, bottom: 60, left: 60, right: 60 },
+          padding: { top: 70, bottom: 80, left: 70, right: 70 },
           maxZoom: 13,
           duration: 900,
         }
       );
     }
   }, [
-    isMapLoaded,
-    selectedRoute,
     alternativeRoutes,
+    selectedRoute,
     origin,
     destination,
+    waypoints,
     isHindi,
     isNavigating,
     onSelectRoute,
     onSelectRestriction,
   ]);
 
-  // Update POI markers on map
+  // Update POI markers on map with category filtering
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !isMapLoaded) return;
@@ -406,7 +454,12 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
 
     if (!showPois || poiList.length === 0) return;
 
-    poiList.forEach((poi) => {
+    const filteredPois =
+      poiCategoryFilter === 'all'
+        ? poiList
+        : poiList.filter((p) => p.category === poiCategoryFilter);
+
+    filteredPois.forEach((poi) => {
       const el = document.createElement('div');
       let icon = '⛽';
       let bgColor = 'bg-emerald-600';
@@ -428,7 +481,7 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
         bgColor = 'bg-blue-600';
       }
 
-      el.className = `w-6 h-6 rounded-full flex items-center justify-center text-[10px] text-white border border-white shadow cursor-pointer transform hover:scale-125 transition-transform ${bgColor}`;
+      el.className = `w-7 h-7 rounded-full flex items-center justify-center text-xs text-white border-2 border-white shadow-md cursor-pointer transform hover:scale-125 transition-transform ${bgColor}`;
       el.innerText = icon;
       el.title = poi.name;
 
@@ -443,9 +496,9 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
 
       poiMarkersRef.current.push(marker);
     });
-  }, [isMapLoaded, showPois, poiList]);
+  }, [isMapLoaded, showPois, poiList, poiCategoryFilter]);
 
-  // --- 1. Driver GPS Marker & Live Follow Mode ---
+  // --- Driver GPS Marker & Live Follow Mode ---
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !isMapLoaded) return;
@@ -486,7 +539,6 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
       driverMarkerRef.current = marker;
     }
 
-    // Auto-center in active navigation mode
     if (isNavigating) {
       map.easeTo({
         center: [longitude, latitude],
@@ -496,7 +548,7 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
     }
   }, [isMapLoaded, driverLocation, isNavigating]);
 
-  // --- 2. Fleet Markers Layer (Fleet Dashboard) ---
+  // --- Fleet Markers Layer ---
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !isMapLoaded) return;
@@ -539,7 +591,6 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
       fleetMarkersRef.current.push(marker);
     });
 
-    // Auto-frame fleet if no route is active
     if (!selectedRoute && fleetCoords.length >= 2) {
       const bounds = calculateBounds(fleetCoords);
       map.fitBounds(
@@ -552,7 +603,7 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
     }
   }, [isMapLoaded, fleetVehicles, selectedRoute, onSelectFleetVehicle]);
 
-  // --- 3. Fleet History Breadcrumb Line ---
+  // --- Fleet History Breadcrumb Line ---
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !isMapLoaded) return;
@@ -597,7 +648,7 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
     updateMapLayers();
   }, [updateMapLayers]);
 
-  // Center on India button
+  // Center on Western India freight gateway
   const handleRecenterIndia = () => {
     if (!mapRef.current) return;
     mapRef.current.flyTo({
@@ -624,7 +675,7 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
           [bounds.maxLng, bounds.maxLat],
         ],
         {
-          padding: { top: 60, bottom: 60, left: 60, right: 60 },
+          padding: { top: 70, bottom: 80, left: 70, right: 70 },
           maxZoom: 13,
           duration: 800,
         }
@@ -651,7 +702,7 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
       <div ref={mapContainerRef} className="w-full h-full absolute inset-0" />
 
       {/* Floating Legend */}
-      <div className="absolute bottom-4 left-4 z-10 pointer-events-none">
+      <div className="absolute bottom-4 left-4 z-10 pointer-events-none hidden sm:block">
         <MapLegend />
       </div>
 
@@ -659,7 +710,7 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
       <div className="absolute top-4 left-4 z-10 flex flex-wrap items-center gap-2">
         <button
           onClick={handleRecenterIndia}
-          className="bg-white/95 backdrop-blur-sm border border-slate-200 px-3 py-1.5 rounded-xl shadow-sm text-xs font-semibold text-slate-800 hover:bg-slate-50 transition-colors flex items-center gap-1.5"
+          className="bg-white/95 backdrop-blur-sm border border-slate-200 px-3 py-1.5 rounded-xl shadow-sm text-xs font-semibold text-slate-800 hover:bg-slate-50 transition-colors flex items-center gap-1.5 cursor-pointer"
         >
           <span>📍</span>
           <span>Western India</span>
@@ -668,7 +719,7 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
         {selectedRoute && (
           <button
             onClick={handleFitRouteOverview}
-            className="bg-white/95 backdrop-blur-sm border border-blue-200 px-3 py-1.5 rounded-xl shadow-sm text-xs font-semibold text-blue-700 hover:bg-blue-50 transition-colors flex items-center gap-1.5"
+            className="bg-white/95 backdrop-blur-sm border border-blue-200 px-3 py-1.5 rounded-xl shadow-sm text-xs font-semibold text-blue-700 hover:bg-blue-50 transition-colors flex items-center gap-1.5 cursor-pointer"
             title="Fit Active Route to Screen"
           >
             <span>🧭</span>
@@ -678,7 +729,7 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
 
         <button
           onClick={() => setShowPois(!showPois)}
-          className={`border px-3 py-1.5 rounded-xl shadow-sm text-xs font-semibold transition-colors flex items-center gap-1.5 ${
+          className={`border px-3 py-1.5 rounded-xl shadow-sm text-xs font-semibold transition-colors flex items-center gap-1.5 cursor-pointer ${
             showPois
               ? 'bg-blue-600 text-white border-blue-600'
               : 'bg-white/95 text-slate-700 border-slate-200 hover:bg-slate-50'
@@ -691,32 +742,145 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
         </button>
       </div>
 
-      {/* Active POI Inspection Card */}
+      {/* Map Style Switcher (Top Right below zoom controls) */}
+      <div className="absolute top-20 right-4 z-10">
+        <div className="relative">
+          <button
+            type="button"
+            onClick={() => setIsStyleMenuOpen(!isStyleMenuOpen)}
+            className="w-10 h-10 rounded-xl bg-white/95 backdrop-blur-md border border-slate-200 shadow-md flex items-center justify-center text-slate-700 hover:bg-slate-50 transition-all cursor-pointer"
+            title="Map Style"
+            aria-label="Map Style"
+          >
+            <span className="text-lg">{MAP_STYLES[currentMapStyle].icon}</span>
+          </button>
+
+          {isStyleMenuOpen && (
+            <div className="absolute right-0 top-12 bg-white/95 backdrop-blur-md border border-slate-200 rounded-2xl shadow-xl p-2 z-20 flex flex-col gap-1 w-36">
+              {(Object.keys(MAP_STYLES) as MapStyleKey[]).map((key) => {
+                const styleDef = MAP_STYLES[key];
+                const isActive = currentMapStyle === key;
+                return (
+                  <button
+                    key={key}
+                    type="button"
+                    onClick={() => handleSwitchStyle(key)}
+                    className={`flex items-center gap-2 px-2.5 py-1.5 rounded-xl text-xs font-bold transition-colors cursor-pointer text-left ${
+                      isActive
+                        ? 'bg-blue-50 text-blue-700 border border-blue-200'
+                        : 'text-slate-700 hover:bg-slate-100'
+                    }`}
+                  >
+                    <span>{styleDef.icon}</span>
+                    <span>{isHindi ? styleDef.nameHi : styleDef.nameEn}</span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* POI Category Filter Chips (under top buttons if POIs are enabled) */}
+      {showPois && poiList.length > 0 && (
+        <div className="absolute top-16 left-4 z-10 flex flex-wrap items-center gap-1.5 max-w-sm sm:max-w-md">
+          {[
+            { id: 'all', label: isHindi ? 'सभी' : 'All', icon: '📍' },
+            { id: 'fuel', label: isHindi ? 'डीजल' : 'Diesel', icon: '⛽' },
+            { id: 'parking_rest', label: isHindi ? 'विश्राम' : 'Rest', icon: '🅿️' },
+            { id: 'repair', label: isHindi ? 'वर्कशॉप' : 'Repair', icon: '🔧' },
+            { id: 'weighbridge', label: isHindi ? 'धर्मकांटा' : 'Weighbridge', icon: '⚖️' },
+            { id: 'food_dhaba', label: isHindi ? 'ढाबा' : 'Dhaba', icon: '🍲' },
+          ].map((cat) => {
+            const isSelected = poiCategoryFilter === cat.id;
+            return (
+              <button
+                key={cat.id}
+                type="button"
+                onClick={() => setPoiCategoryFilter(cat.id)}
+                className={`px-2 py-1 rounded-lg text-[11px] font-bold shadow-xs transition-colors flex items-center gap-1 cursor-pointer ${
+                  isSelected
+                    ? 'bg-slate-900 text-white'
+                    : 'bg-white/90 backdrop-blur-sm text-slate-700 hover:bg-white border border-slate-200'
+                }`}
+              >
+                <span>{cat.icon}</span>
+                <span>{cat.label}</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Active POI Interactive Card */}
       {activePoi && (
-        <div className="absolute top-16 right-4 z-20 bg-white/95 backdrop-blur-md border border-slate-300 rounded-2xl p-3 shadow-xl max-w-xs text-xs space-y-1.5">
+        <div className="absolute bottom-16 sm:bottom-6 right-4 z-20 bg-white/95 backdrop-blur-md border border-slate-300 rounded-2xl p-4 shadow-2xl max-w-xs w-full text-xs space-y-2 animate-in fade-in zoom-in-95 duration-150">
           <div className="flex items-start justify-between gap-2">
-            <div className="font-bold text-slate-900 text-sm">{activePoi.name}</div>
+            <div>
+              <div className="font-extrabold text-slate-900 text-sm">{activePoi.name}</div>
+              <div className="text-[10px] text-blue-700 font-bold uppercase tracking-wider mt-0.5">
+                {activePoi.category.replace('_', ' ')}
+              </div>
+            </div>
             <button
               onClick={() => setActivePoi(null)}
-              className="text-slate-400 hover:text-slate-700 font-bold px-1"
+              className="text-slate-400 hover:text-slate-700 font-black px-1.5 py-0.5 text-base cursor-pointer"
             >
               ✕
             </button>
           </div>
-          <div className="text-[11px] text-blue-700 font-semibold uppercase tracking-wider">
-            {activePoi.category.replace('_', ' ')}
-          </div>
+
           {activePoi.distanceKm !== undefined && (
-            <div className="text-slate-600">
-              📍 <strong className="text-slate-800">{activePoi.distanceKm} km</strong> from route line
+            <div className="text-slate-600 bg-slate-50 p-1.5 rounded-lg border border-slate-100 flex items-center gap-1.5">
+              <span>📍</span>
+              <span>
+                <strong className="text-slate-800">{activePoi.distanceKm} km</strong> from route line
+              </span>
             </div>
           )}
+
           {activePoi.address && (
-            <div className="text-[11px] text-slate-500 leading-tight">{activePoi.address}</div>
+            <div className="text-[11px] text-slate-500 leading-snug">{activePoi.address}</div>
           )}
+
           {activePoi.phone && (
-            <div className="text-[11px] text-slate-700 font-mono">📞 {activePoi.phone}</div>
+            <div className="text-[11px] text-slate-700 font-mono flex items-center gap-1">
+              <span>📞</span>
+              <a href={`tel:${activePoi.phone}`} className="hover:underline text-blue-600 font-semibold">
+                {activePoi.phone}
+              </a>
+            </div>
           )}
+
+          {/* Action Buttons: Navigate Here & Add Stop */}
+          <div className="flex items-center gap-2 pt-1 border-t border-slate-100">
+            {onNavigateToPoi && (
+              <button
+                type="button"
+                onClick={() => {
+                  onNavigateToPoi(activePoi);
+                  setActivePoi(null);
+                }}
+                className="flex-1 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold text-[11px] transition-colors flex items-center justify-center gap-1 cursor-pointer"
+              >
+                <span>🧭</span>
+                <span>{isHindi ? 'यहाँ जाएं' : 'Navigate'}</span>
+              </button>
+            )}
+            {onAddPoiStop && (
+              <button
+                type="button"
+                onClick={() => {
+                  onAddPoiStop(activePoi);
+                  setActivePoi(null);
+                }}
+                className="flex-1 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-200 rounded-xl font-bold text-[11px] transition-colors flex items-center justify-center gap-1 cursor-pointer"
+              >
+                <span>➕</span>
+                <span>{isHindi ? 'स्टॉप जोड़ें' : 'Add Stop'}</span>
+              </button>
+            )}
+          </div>
         </div>
       )}
     </div>
