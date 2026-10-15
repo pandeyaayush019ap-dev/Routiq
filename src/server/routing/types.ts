@@ -25,10 +25,13 @@ export interface RouteRequestParams {
 
 export interface RouteTurnStep {
   instruction: string;
+  instructionHi?: string;
   distanceMeters: number;
   durationSeconds: number;
   roadName?: string;
   type?: string;
+  modifier?: string;
+  icon?: string;
   coordinates: [number, number];
 }
 

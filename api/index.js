@@ -1311,6 +1311,92 @@ async function fetchWithTimeout2(url, options = {}, timeoutMs = 3500) {
     throw err;
   }
 }
+function formatOsrmInstruction(type = "turn", modifier = "", roadName = "Highway") {
+  const road = roadName && roadName !== "undefined" ? roadName : "road";
+  const roadHi = roadName && roadName !== "undefined" ? roadName : "\u092E\u093E\u0930\u094D\u0917";
+  if (type === "arrive") {
+    return {
+      en: "You have arrived at your destination",
+      hi: "\u0906\u092A \u0905\u092A\u0928\u0947 \u0917\u0902\u0924\u0935\u094D\u092F \u092A\u0930 \u092A\u0939\u0941\u0902\u091A \u0917\u090F \u0939\u0948\u0902",
+      icon: "\u{1F3C1}"
+    };
+  }
+  if (type === "depart") {
+    return {
+      en: `Head out onto ${road}`,
+      hi: `${roadHi} \u092A\u0930 \u092F\u093E\u0924\u094D\u0930\u093E \u0936\u0941\u0930\u0942 \u0915\u0930\u0947\u0902`,
+      icon: "\u2B06"
+    };
+  }
+  if (type === "roundabout" || type === "rotary") {
+    return {
+      en: `At roundabout, continue onto ${road}`,
+      hi: `\u0917\u094B\u0932\u091A\u0915\u094D\u0915\u0930 \u0938\u0947 ${roadHi} \u092A\u0930 \u0928\u093F\u0915\u0932\u0947\u0902`,
+      icon: "\u{1F504}"
+    };
+  }
+  if (modifier === "uturn") {
+    return {
+      en: `Make a U-turn onto ${road}`,
+      hi: `${roadHi} \u092A\u0930 \u092F\u0942-\u091F\u0930\u094D\u0928 \u0932\u0947\u0902`,
+      icon: "\u2B8C"
+    };
+  }
+  if (modifier === "sharp left") {
+    return {
+      en: `Sharp left onto ${road}`,
+      hi: `${roadHi} \u092A\u0930 \u0924\u0940\u0916\u093E \u092C\u093E\u092F\u093E\u0902 \u092E\u094B\u0921\u093C \u0932\u0947\u0902`,
+      icon: "\u21B0"
+    };
+  }
+  if (modifier === "left") {
+    return {
+      en: `Turn left onto ${road}`,
+      hi: `${roadHi} \u092A\u0930 \u092C\u093E\u090F\u0902 \u092E\u0941\u0921\u093C\u0947\u0902`,
+      icon: "\u21B0"
+    };
+  }
+  if (modifier === "slight left") {
+    return {
+      en: `Slight left onto ${road}`,
+      hi: `${roadHi} \u092A\u0930 \u0939\u0932\u094D\u0915\u093E \u092C\u093E\u092F\u093E\u0902 \u092E\u094B\u0921\u093C \u0932\u0947\u0902`,
+      icon: "\u2196"
+    };
+  }
+  if (modifier === "sharp right") {
+    return {
+      en: `Sharp right onto ${road}`,
+      hi: `${roadHi} \u092A\u0930 \u0924\u0940\u0916\u093E \u0926\u093E\u092F\u093E\u0902 \u092E\u094B\u0921\u093C \u0932\u0947\u0902`,
+      icon: "\u21B1"
+    };
+  }
+  if (modifier === "right") {
+    return {
+      en: `Turn right onto ${road}`,
+      hi: `${roadHi} \u092A\u0930 \u0926\u093E\u090F\u0902 \u092E\u0941\u0921\u093C\u0947\u0902`,
+      icon: "\u21B1"
+    };
+  }
+  if (modifier === "slight right") {
+    return {
+      en: `Slight right onto ${road}`,
+      hi: `${roadHi} \u092A\u0930 \u0939\u0932\u094D\u0915\u093E \u0926\u093E\u092F\u093E\u0902 \u092E\u094B\u0921\u093C \u0932\u0947\u0902`,
+      icon: "\u2197"
+    };
+  }
+  if (type === "fork") {
+    return {
+      en: modifier.includes("left") ? `Keep left towards ${road}` : `Keep right towards ${road}`,
+      hi: modifier.includes("left") ? `\u092C\u093E\u090F\u0902 \u0932\u0947\u0928 \u092E\u0947\u0902 \u0930\u0939\u0947\u0902 (${roadHi})` : `\u0926\u093E\u090F\u0902 \u0932\u0947\u0928 \u092E\u0947\u0902 \u0930\u0939\u0947\u0902 (${roadHi})`,
+      icon: modifier.includes("left") ? "\u2196" : "\u2197"
+    };
+  }
+  return {
+    en: `Continue straight on ${road}`,
+    hi: `${roadHi} \u092A\u0930 \u0938\u0940\u0927\u0947 \u0906\u0917\u0947 \u092C\u0922\u093C\u0947\u0902`,
+    icon: "\u2B06"
+  };
+}
 var OsrmRoutingProvider = class {
   constructor() {
     this.name = "OSRM Road Network Engine + Routiq Spatial GIS";
@@ -1338,13 +1424,23 @@ var OsrmRoutingProvider = class {
         const distanceKm = Number((r.distance / 1e3).toFixed(1));
         const truckDurationMinutes = Math.round(r.duration * 1.2 / 60);
         const highwaySummary = r.legs[0]?.summary || (index === 0 ? "Primary National Highway Corridor" : "Alternative State Route");
-        const steps = (r.legs[0]?.steps || []).map((s) => ({
-          instruction: s.maneuver.instruction || `Drive along ${s.name || "highway"}`,
-          distanceMeters: Math.round(s.distance),
-          durationSeconds: Math.round(s.duration),
-          roadName: s.name,
-          coordinates: s.maneuver.location || coords[0]
-        }));
+        const steps = (r.legs[0]?.steps || []).map((s) => {
+          const type = s.maneuver.type || "turn";
+          const modifier = s.maneuver.modifier || "";
+          const roadName = s.name && s.name.trim().length > 0 ? s.name : "Highway";
+          const formatted = formatOsrmInstruction(type, modifier, roadName);
+          return {
+            instruction: formatted.en,
+            instructionHi: formatted.hi,
+            type,
+            modifier,
+            icon: formatted.icon,
+            distanceMeters: Math.round(s.distance),
+            durationSeconds: Math.round(s.duration),
+            roadName,
+            coordinates: s.maneuver.location || coords[0]
+          };
+        });
         const isAlt = index > 0;
         return {
           id: `osrm_route_${Date.now()}_${index}`,

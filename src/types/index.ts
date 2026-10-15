@@ -52,6 +52,18 @@ export interface RoadRestriction {
 
 export type RouteStatus = 'RECOMMENDED' | 'WARNING' | 'BLOCKED';
 
+export interface DetailedTurnStep {
+  instructionEn: string;
+  instructionHi: string;
+  roadName?: string;
+  distanceMeters: number;
+  durationSeconds: number;
+  type?: string;
+  modifier?: string;
+  icon?: string;
+  coordinates: [number, number]; // [lon, lat] of the maneuver
+}
+
 export interface RouteCandidate {
   id: string;
   name: {
@@ -74,6 +86,7 @@ export interface RouteCandidate {
     en: string[];
     hi: string[];
   };
+  detailedSteps?: DetailedTurnStep[];
   status?: RouteStatus;
   statusReasons?: string[];
 }

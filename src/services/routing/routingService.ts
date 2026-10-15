@@ -70,7 +70,7 @@ export class ProductionRoutingService implements IRoutingService {
   }
 
   public async calculateRoutes(params: RouteSearchParams): Promise<RouteCalculationResult> {
-    const { originName, destinationName, vehicle, departureTime } = params;
+    const { originName, destinationName, vehicle, departureTime, originCoordinates, destinationCoordinates } = params;
 
     // 1. Try real backend API endpoint /api/routes
     try {
@@ -80,8 +80,8 @@ export class ProductionRoutingService implements IRoutingService {
       const requestPayload = {
         originName,
         destinationName,
-        originCoordinates: originMatch?.coordinates || [0, 0],
-        destinationCoordinates: destMatch?.coordinates || [0, 0],
+        originCoordinates: originCoordinates || originMatch?.coordinates || [0, 0],
+        destinationCoordinates: destinationCoordinates || destMatch?.coordinates || [0, 0],
         waypoints: params.waypoints?.map((w) => w.coordinates) || undefined,
         vehicle: {
           id: vehicle.id,
@@ -151,8 +151,19 @@ export class ProductionRoutingService implements IRoutingService {
               })),
               turnSteps: {
                 en: (r.steps || []).map((s) => s.instruction),
-                hi: (r.steps || []).map((s) => s.instruction),
+                hi: (r.steps || []).map((s) => (s as any).instructionHi || s.instruction),
               },
+              detailedSteps: (r.steps || []).map((s: any) => ({
+                instructionEn: s.instruction,
+                instructionHi: s.instructionHi || s.instruction,
+                roadName: s.roadName,
+                distanceMeters: s.distanceMeters || 500,
+                durationSeconds: s.durationSeconds || 60,
+                type: s.type,
+                modifier: s.modifier,
+                icon: s.icon,
+                coordinates: s.coordinates || r.geometry.coordinates[0],
+              })),
               status: r.status,
               statusReasons: r.statusReasons,
             })
@@ -293,10 +304,31 @@ export class ProductionRoutingService implements IRoutingService {
         };
       }
 
+      const coords = displayGeometry.coordinates;
+      const stepCount = route.turnSteps?.en?.length || 1;
+      const detailedSteps = (route.turnSteps?.en || []).map((stepEn, idx) => {
+        const stepHi = route.turnSteps?.hi?.[idx] || stepEn;
+        const coordIdx = Math.min(
+          coords.length - 1,
+          Math.floor((idx / Math.max(1, stepCount - 1)) * (coords.length - 1))
+        );
+        const stepCoord = coords[coordIdx] || coords[0];
+        const stepDistMeters = Math.round((route.distanceKm / stepCount) * 1000);
+        return {
+          instructionEn: stepEn,
+          instructionHi: stepHi,
+          roadName: route.whyExplanation?.en || route.name.en,
+          distanceMeters: stepDistMeters,
+          durationSeconds: Math.round((route.durationMinutes / stepCount) * 60),
+          coordinates: stepCoord as [number, number],
+        };
+      });
+
       return {
         ...route,
         geometry: displayGeometry,
         restrictions: evaluatedRestrictions,
+        detailedSteps,
         status: routeStatus,
         statusReasons: reasons,
       };

@@ -74,6 +74,7 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
   // Map Style & Layer State
   const [currentMapStyle, setCurrentMapStyle] = useState<MapStyleKey>('streets');
   const [isStyleMenuOpen, setIsStyleMenuOpen] = useState<boolean>(false);
+  const [isManualExploration, setIsManualExploration] = useState<boolean>(false);
 
   // POI Layer State
   const [showPois, setShowPois] = useState<boolean>(true);
@@ -107,6 +108,17 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
 
       map.on('load', () => {
         setIsMapLoaded(true);
+      });
+
+      // User manual interaction detection for Google-Maps-style exploration mode
+      map.on('dragstart', () => {
+        setIsManualExploration(true);
+      });
+      map.on('pitchstart', () => {
+        setIsManualExploration(true);
+      });
+      map.on('rotatestart', () => {
+        setIsManualExploration(true);
       });
 
       // Safe style reload listener: When user switches style (e.g. Satellite), re-add route layers
@@ -539,14 +551,31 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
       driverMarkerRef.current = marker;
     }
 
-    if (isNavigating) {
+    if (isNavigating && !isManualExploration) {
       map.easeTo({
         center: [longitude, latitude],
-        zoom: Math.max(map.getZoom(), 14.5),
-        duration: 900,
+        zoom: 16.5,
+        pitch: 45,
+        bearing: typeof heading === 'number' ? heading : 0,
+        duration: 800,
       });
     }
-  }, [isMapLoaded, driverLocation, isNavigating]);
+  }, [isMapLoaded, driverLocation, isNavigating, isManualExploration]);
+
+  // Reset 3D pitch and exploration mode when exiting navigation
+  useEffect(() => {
+    if (!isNavigating) {
+      setIsManualExploration(false);
+      const map = mapRef.current;
+      if (map && isMapLoaded) {
+        map.easeTo({
+          pitch: 0,
+          bearing: 0,
+          duration: 600,
+        });
+      }
+    }
+  }, [isNavigating, isMapLoaded]);
 
   // --- Fleet Markers Layer ---
   useEffect(() => {
@@ -881,6 +910,32 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
               </button>
             )}
           </div>
+        </div>
+      )}
+
+      {/* Floating Re-center Button during Navigation */}
+      {isNavigating && isManualExploration && driverLocation && (
+        <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-20">
+          <button
+            type="button"
+            onClick={() => {
+              setIsManualExploration(false);
+              const map = mapRef.current;
+              if (map) {
+                map.easeTo({
+                  center: [driverLocation.longitude, driverLocation.latitude],
+                  zoom: 16.5,
+                  pitch: 45,
+                  bearing: typeof driverLocation.heading === 'number' ? driverLocation.heading : 0,
+                  duration: 600,
+                });
+              }
+            }}
+            className="bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-xs px-4 py-2.5 rounded-full shadow-2xl flex items-center gap-2 border-2 border-white animate-bounce transition-transform active:scale-95 cursor-pointer"
+          >
+            <span className="text-sm">🎯</span>
+            <span>{isHindi ? 'वाहन पर पुनः केंद्रित करें' : 'Re-center on Vehicle'}</span>
+          </button>
         </div>
       )}
     </div>

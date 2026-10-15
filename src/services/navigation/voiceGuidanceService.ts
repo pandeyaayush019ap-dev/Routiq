@@ -126,6 +126,16 @@ class VoiceGuidanceService {
     }
   }
 
+  public announceRerouting(isHindi: boolean): void {
+    const text = isHindi ? 'मार्ग पुनः परिकलित किया जा रहा है' : 'Recalculating route';
+    this.speak(text, isHindi);
+  }
+
+  public announceArrival(isHindi: boolean): void {
+    const text = isHindi ? 'आप अपने गंतव्य पर पहुंच गए हैं' : 'You have arrived at your destination';
+    this.speak(text, isHindi);
+  }
+
   public resetProximityAlerts(): void {
     this.alertedRestrictions.clear();
     this.lastSpokenText = '';

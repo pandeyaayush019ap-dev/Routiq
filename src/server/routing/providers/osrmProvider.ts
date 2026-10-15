@@ -15,6 +15,94 @@ async function fetchWithTimeout(url: string, options: RequestInit = {}, timeoutM
   }
 }
 
+function formatOsrmInstruction(type: string = 'turn', modifier: string = '', roadName: string = 'Highway'): { en: string; hi: string; icon: string } {
+  const road = roadName && roadName !== 'undefined' ? roadName : 'road';
+  const roadHi = roadName && roadName !== 'undefined' ? roadName : 'मार्ग';
+
+  if (type === 'arrive') {
+    return {
+      en: 'You have arrived at your destination',
+      hi: 'आप अपने गंतव्य पर पहुंच गए हैं',
+      icon: '🏁',
+    };
+  }
+  if (type === 'depart') {
+    return {
+      en: `Head out onto ${road}`,
+      hi: `${roadHi} पर यात्रा शुरू करें`,
+      icon: '⬆',
+    };
+  }
+  if (type === 'roundabout' || type === 'rotary') {
+    return {
+      en: `At roundabout, continue onto ${road}`,
+      hi: `गोलचक्कर से ${roadHi} पर निकलें`,
+      icon: '🔄',
+    };
+  }
+  if (modifier === 'uturn') {
+    return {
+      en: `Make a U-turn onto ${road}`,
+      hi: `${roadHi} पर यू-टर्न लें`,
+      icon: '⮌',
+    };
+  }
+  if (modifier === 'sharp left') {
+    return {
+      en: `Sharp left onto ${road}`,
+      hi: `${roadHi} पर तीखा बायां मोड़ लें`,
+      icon: '↰',
+    };
+  }
+  if (modifier === 'left') {
+    return {
+      en: `Turn left onto ${road}`,
+      hi: `${roadHi} पर बाएं मुड़ें`,
+      icon: '↰',
+    };
+  }
+  if (modifier === 'slight left') {
+    return {
+      en: `Slight left onto ${road}`,
+      hi: `${roadHi} पर हल्का बायां मोड़ लें`,
+      icon: '↖',
+    };
+  }
+  if (modifier === 'sharp right') {
+    return {
+      en: `Sharp right onto ${road}`,
+      hi: `${roadHi} पर तीखा दायां मोड़ लें`,
+      icon: '↱',
+    };
+  }
+  if (modifier === 'right') {
+    return {
+      en: `Turn right onto ${road}`,
+      hi: `${roadHi} पर दाएं मुड़ें`,
+      icon: '↱',
+    };
+  }
+  if (modifier === 'slight right') {
+    return {
+      en: `Slight right onto ${road}`,
+      hi: `${roadHi} पर हल्का दायां मोड़ लें`,
+      icon: '↗',
+    };
+  }
+  if (type === 'fork') {
+    return {
+      en: modifier.includes('left') ? `Keep left towards ${road}` : `Keep right towards ${road}`,
+      hi: modifier.includes('left') ? `बाएं लेन में रहें (${roadHi})` : `दाएं लेन में रहें (${roadHi})`,
+      icon: modifier.includes('left') ? '↖' : '↗',
+    };
+  }
+  return {
+    en: `Continue straight on ${road}`,
+    hi: `${roadHi} पर सीधे आगे बढ़ें`,
+    icon: '⬆',
+  };
+}
+
 export class OsrmRoutingProvider implements IRoutingProvider {
   public name = 'OSRM Road Network Engine + Routiq Spatial GIS';
 
@@ -71,13 +159,25 @@ export class OsrmRoutingProvider implements IRoutingProvider {
           r.legs[0]?.summary ||
           (index === 0 ? 'Primary National Highway Corridor' : 'Alternative State Route');
 
-        const steps = (r.legs[0]?.steps || []).map((s) => ({
-          instruction: s.maneuver.instruction || `Drive along ${s.name || 'highway'}`,
-          distanceMeters: Math.round(s.distance),
-          durationSeconds: Math.round(s.duration),
-          roadName: s.name,
-          coordinates: s.maneuver.location || coords[0],
-        }));
+        const steps = (r.legs[0]?.steps || []).map((s) => {
+          const type = s.maneuver.type || 'turn';
+          const modifier = (s.maneuver as any).modifier || '';
+          const roadName = s.name && s.name.trim().length > 0 ? s.name : 'Highway';
+
+          const formatted = formatOsrmInstruction(type, modifier, roadName);
+
+          return {
+            instruction: formatted.en,
+            instructionHi: formatted.hi,
+            type,
+            modifier,
+            icon: formatted.icon,
+            distanceMeters: Math.round(s.distance),
+            durationSeconds: Math.round(s.duration),
+            roadName,
+            coordinates: s.maneuver.location || coords[0],
+          };
+        });
 
         const isAlt = index > 0;
 

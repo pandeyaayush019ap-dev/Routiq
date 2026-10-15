@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { LanguageProvider } from './i18n/context';
 import { Header } from './components/layout/Header';
 import { Navigation, ActiveTab } from './components/layout/Navigation';
@@ -48,6 +48,7 @@ const AppContent: React.FC = () => {
   // Live GPS Navigation State
   const [isNavigating, setIsNavigating] = useState<boolean>(false);
   const [isStartingNavigation, setIsStartingNavigation] = useState<boolean>(false);
+  const [isRerouting, setIsRerouting] = useState<boolean>(false);
   const [driverPosition, setDriverPosition] = useState<GpsPosition | null>(null);
   const [activeTripId, setActiveTripId] = useState<string | null>(null);
   const [currentManeuver, setCurrentManeuver] = useState<ManeuverInfo | null>(null);
@@ -58,6 +59,10 @@ const AppContent: React.FC = () => {
   const [offRouteDistanceMeters, setOffRouteDistanceMeters] = useState<number>(0);
   const [navError, setNavError] = useState<string | null>(null);
   const [gpsNotice, setGpsNotice] = useState<string | null>(null);
+
+  const activeRouteRef = useRef<RouteCandidate | null>(null);
+  const lastRerouteTimeRef = useRef<number>(0);
+  const hasAnnouncedArrivalRef = useRef<boolean>(false);
 
   // Network & PWA Install State
   const [isOnline, setIsOnline] = useState<boolean>(() => (typeof navigator !== 'undefined' ? navigator.onLine : true));
@@ -159,11 +164,61 @@ const AppContent: React.FC = () => {
     setActiveVehicle(vehicleService.getActiveVehicle());
   };
 
+  // --- Dynamic Auto-Rerouting on Off-Route ---
+  const handleAutoReroute = useCallback(
+    async (currentPos: GpsPosition) => {
+      const now = Date.now();
+      if (now - lastRerouteTimeRef.current < 20000 || isRerouting) {
+        return;
+      }
+      if (!routeResult?.destination) return;
+
+      lastRerouteTimeRef.current = now;
+      setIsRerouting(true);
+
+      try {
+        voiceGuidance.announceRerouting(isHindi);
+
+        const result = await routingService.calculateRoutes({
+          originName: isHindi ? 'वर्तमान स्थान' : 'Current Location',
+          originCoordinates: [currentPos.longitude, currentPos.latitude],
+          destinationName: routeResult.destination.name.en,
+          destinationCoordinates: routeResult.destination.coordinates,
+          vehicle: activeVehicle,
+        });
+
+        if (result.routes && result.routes.length > 0) {
+          const newRoute =
+            result.routes.find((r) => r.id === result.recommendedRouteId) || result.routes[0];
+          setRouteResult(result);
+          setSelectedRouteId(newRoute.id);
+          activeRouteRef.current = newRoute;
+          navigationEngine.reset();
+
+          const newState = navigationEngine.evaluateState(currentPos, newRoute, isHindi);
+          setCurrentManeuver(newState.currentManeuver);
+          setRemainingDistanceKm(newState.remainingDistanceKm);
+          setRemainingDurationMinutes(newState.remainingDurationMinutes);
+          setIsOffRoute(newState.isOffRoute);
+          setIsApproachingOrigin(newState.isApproachingOrigin);
+          setOffRouteDistanceMeters(newState.offRouteDistanceMeters);
+        }
+      } catch (err) {
+        console.warn('[Navigation] Auto-reroute failed:', err);
+      } finally {
+        setIsRerouting(false);
+      }
+    },
+    [routeResult, isRerouting, isHindi, activeVehicle]
+  );
+
   // --- Real Driver GPS Navigation Flow ---
   const handleStartNavigation = async (route: RouteCandidate) => {
     setIsStartingNavigation(true);
     setNavError(null);
     setGpsNotice(null);
+    activeRouteRef.current = route;
+    hasAnnouncedArrivalRef.current = false;
 
     // 1. Validate route and destination
     if (!route || !routeResult?.destination) {
@@ -233,13 +288,25 @@ const AppContent: React.FC = () => {
         onPosition: (pos) => {
           setGpsNotice(null);
           setDriverPosition(pos);
-          const nextState = navigationEngine.evaluateState(pos, route, isHindi);
+          const currentActiveRoute = activeRouteRef.current || route;
+          const nextState = navigationEngine.evaluateState(pos, currentActiveRoute, isHindi);
           setCurrentManeuver(nextState.currentManeuver);
           setRemainingDistanceKm(nextState.remainingDistanceKm);
           setRemainingDurationMinutes(nextState.remainingDurationMinutes);
           setIsOffRoute(nextState.isOffRoute);
           setIsApproachingOrigin(nextState.isApproachingOrigin);
           setOffRouteDistanceMeters(nextState.offRouteDistanceMeters);
+
+          // Check destination arrival
+          if (nextState.currentManeuver.isDestination && !hasAnnouncedArrivalRef.current) {
+            hasAnnouncedArrivalRef.current = true;
+            voiceGuidance.announceArrival(isHindi);
+          }
+
+          // Trigger auto-reroute when confirmed off-route
+          if (nextState.shouldReroute) {
+            handleAutoReroute(pos);
+          }
         },
         onError: (err) => {
           console.warn('[GPS] Watcher error:', err);
@@ -274,6 +341,9 @@ const AppContent: React.FC = () => {
       await navigationEngine.endTrip(activeTripId);
       setActiveTripId(null);
     }
+    activeRouteRef.current = null;
+    hasAnnouncedArrivalRef.current = false;
+    setIsRerouting(false);
     setIsNavigating(false);
     setIsStartingNavigation(false);
     setDriverPosition(null);
@@ -437,8 +507,13 @@ const AppContent: React.FC = () => {
                 offRouteDistanceMeters={offRouteDistanceMeters}
                 onStopNavigation={handleStopNavigation}
                 onRecalculate={() => {
-                  if (selectedRoute) handleStartNavigation(selectedRoute);
+                  if (driverPosition) {
+                    handleAutoReroute(driverPosition);
+                  } else if (selectedRoute) {
+                    handleStartNavigation(selectedRoute);
+                  }
                 }}
+                isRerouting={isRerouting}
                 routeName={selectedRoute ? { en: selectedRoute.name.en, hi: selectedRoute.name.hi } : undefined}
                 gpsNotice={gpsNotice}
                 restrictions={selectedRoute?.restrictions}
